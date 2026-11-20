@@ -1,0 +1,4 @@
+# Optional LLM judge. Only needed for `pytest -m ragas`. Not installed by default.
+# Pinned to the API that backend/evals/ragas_judge.py was written against.
+ragas==0.4.4
+openai>=1.0

@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      AFC_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      AFC_DATA_DIR: /var/lib/agentic-fleet-copilot
+      # Demo keys: acme-demo-key and globex-demo-key. Override AFC_API_KEYS (key=tenant pairs) outside local demos.
+      AFC_SEED_DEMO: "true"
+      # Platform admin key for creating and deleting tenants. Unset leaves those endpoints disabled.
+      AFC_BOOTSTRAP_ADMIN_KEY: ${AFC_BOOTSTRAP_ADMIN_KEY:-}
+    volumes:
+      - backend_data:/var/lib/agentic-fleet-copilot
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Inlined at build time by Next.js; the browser calls this URL directly.
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  backend_data:

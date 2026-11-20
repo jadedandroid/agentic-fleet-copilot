@@ -1,0 +1,33 @@
+# Backend
+backend/.venv/
+backend/data/
+backend/.pytest_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+frontend/tsconfig.tsbuildinfo
+
+# OS
+.DS_Store
+
+# Take-home materials and local-only planning notes
+Take-Home.pdf
+FINISH_PLAN.md
+device-telemetry-dataset.ndjson
+
+# Local secrets and runtime data
+.env
+.env.*
+!.env.example
+backend/data/
+*.sqlite3
+*.duckdb
+*.jsonl
+
+# Python and tooling
+__pycache__/
+*.pyc
+backend/evals/reports/
+.venv/

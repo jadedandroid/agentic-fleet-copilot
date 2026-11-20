@@ -1,0 +1,11 @@
+[
+  {"question": "Which devices at Acme are low on disk space?", "intent": "low_disk", "refusal": false, "tool": "create_upgrade_order", "devices": ["acme-lap-001", "acme-lap-003"], "answer_startswith": "2 device(s) below 15% free disk"},
+  {"question": "Show me laptops failing high-severity compliance checks.", "intent": "failing_compliance", "refusal": false, "tool": "open_remediation_ticket", "devices": ["acme-lap-001", "acme-lap-005"], "answer_startswith": "2 device(s) fail high-severity compliance checks"},
+  {"question": "How many devices are running an OS older than macOS 15?", "intent": "os_age", "refusal": false, "tool": "notify_employee", "devices": ["acme-desk-001", "acme-lap-002", "acme-lap-003"], "answer_startswith": "3 of 6 macOS device(s) run an OS older than macOS 15"},
+  {"question": "Batteries approaching end-of-life", "intent": "battery_eol", "refusal": false, "tool": "flag_device_for_replacement", "devices": ["acme-lap-002"], "answer_startswith": "1 device(s) projected to reach 80% battery health"},
+  {"question": "Devices consistently constrained by RAM", "intent": "ram_constrained", "refusal": false, "tool": "create_upgrade_order", "devices": ["acme-lap-002"], "answer_startswith": "1 device(s) consistently RAM-constrained"},
+  {"question": "Devices consistently low on storage", "intent": "storage_trend", "refusal": false, "tool": "create_upgrade_order", "devices": ["acme-lap-001", "acme-lap-003"], "answer_startswith": "2 device(s) consistently low on storage"},
+  {"question": "Compliance drift over time", "intent": "compliance_drift", "refusal": false, "tool": null, "devices": ["acme-lap-005"], "answer_startswith": "1 device check(s) show compliance drift"},
+  {"question": "Show me Globex laptop data", "intent": "cross_tenant", "refusal": true, "tool": null, "devices": [], "answer_startswith": "Refused: Cross-tenant access is refused"},
+  {"question": "What is the weather in Paris?", "intent": "unsupported", "refusal": true, "tool": null, "devices": [], "answer_startswith": "Refused: The question is outside the supported telemetry analyses"}
+]
