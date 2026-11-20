@@ -191,7 +191,7 @@ pip install -r requirements-evals.txt
 AFC_RAGAS_ENABLED=1 OPENAI_API_KEY=... pytest -m ragas
 ```
 
-It writes a JSON report to `backend/evals/reports/`. The RAGAS code was written against `ragas==0.4.4` but has not been run end to end yet, because no API key was available when it was added. The default test run never calls it.
+It writes a JSON report to `backend/evals/reports/`. The RAGAS code was written against `ragas==0.4.4` but has not been run end to end, because no OpenAI key has been provided. Without the flag and key, the test skips with a clear reason and makes no external call. The default test run never calls it.
 
 ## Rubric evidence
 
