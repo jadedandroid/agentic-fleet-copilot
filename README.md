@@ -101,7 +101,8 @@ Pending approvals are checkpointed to `data/checkpoints.sqlite3` (LangGraph `Sql
 
 The agent is an explicit LangGraph state graph, not a prompt wrapper. Each stage is a node, and the graph is compiled with a SQLite checkpointer so it can pause and resume across restarts.
 
-1. **Route** classifies the question into one supported intent (low disk, storage trend, RAM pressure, failing compliance, compliance drift, OS age, battery end-of-life, or cross-tenant or unsupported, which are refused). A mention of another tenant's name is refused, but a caller's own company name never is.
+1. **Route** classifies the question into one supported intent. The router corrects one-letter typos in longer words, maps common paraphrases (for example "hard drive" to disk), and refuses negated questions, superlatives like "most" or "lowest", and questions that span several topics, each with a stated reason. A misspelled rival company name is still treated as cross-tenant. Its behavior is covered by `tests/test_router_robustness.py`.
+    (low disk, storage trend, RAM pressure, failing compliance, compliance drift, OS age, battery end-of-life, or cross-tenant or unsupported, which are refused). A mention of another tenant's name is refused, but a caller's own company name never is.
 1a. **Plan** records the steps it will take (retrieve, analyze, compose, propose, and whether remediation is allowed) in the trace before any data is read.
 2. **Retrieve and analyze** loads the caller's devices, metrics, and compliance results for the window, then runs one deterministic analysis.
 3. **Compose** writes the answer from the finding, with every device cited back to its snapshot.

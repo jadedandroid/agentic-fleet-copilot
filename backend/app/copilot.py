@@ -33,7 +33,7 @@ from .analytics import (
     storage_constrained,
 )
 from .audit import AuditLogger
-from .intent import classify, device_type_scope
+from .intent import classify, classify_with_reason, device_type_scope
 from .models import (
     MAX_LOOKBACK_MINUTES,
     Citation,
@@ -215,13 +215,13 @@ class FleetCopilotService:
         return builder.compile(checkpointer=self._checkpointer)
 
     def _route_intent(self, state: CopilotState) -> dict[str, Any]:
-        intent = classify(state["question"], state["tenant_id"], tuple(self._known_tenants()))
+        intent, detail = classify_with_reason(state["question"], state["tenant_id"], tuple(self._known_tenants()))
         scope = device_type_scope(state["question"])
         refusal = None
         if intent == "cross_tenant":
             refusal = "Cross-tenant access is refused. Queries only read the caller's own tenant."
         elif intent == "unsupported":
-            refusal = (
+            refusal = detail or (
                 "The question is outside the supported telemetry analyses: low disk, storage trends, "
                 "RAM pressure, failing compliance, compliance drift, OS age, and battery end-of-life."
             )
