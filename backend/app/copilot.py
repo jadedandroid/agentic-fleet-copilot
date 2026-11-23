@@ -30,6 +30,7 @@ from .analytics import (
     os_age,
     low_disk,
     ram_constrained,
+    ram_now,
     storage_constrained,
 )
 from .audit import AuditLogger
@@ -53,6 +54,7 @@ ANALYSES: dict[str, Callable[[FleetData, str | None], Finding]] = {
     "low_disk": low_disk,
     "storage_trend": storage_constrained,
     "ram_constrained": ram_constrained,
+    "ram_now": ram_now,
     "failing_compliance": failing_compliance,
     "os_age": os_age,
     "battery_eol": battery_eol,

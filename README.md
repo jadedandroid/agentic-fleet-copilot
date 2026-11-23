@@ -137,6 +137,7 @@ The agent is an explicit LangGraph state graph, not a prompt wrapper. Each stage
 - **Raw-body uploads.** No multipart dependency. The CSV format is one device per row, grouped by `observed_at`.
 - **Email as the login identifier, unique platform-wide.** This keeps login simple. The trade-off is that a tenant cannot reuse an address for another tenant.
 - **Audit kept after tenant deletion.** It is append-only by design. Audit payloads still contain device IDs for a deleted tenant, and only platform admins can read them.
+- **RAM wording:** "high RAM" or "memory pressure" means the current reading (at or above 90%). "Consistently", "always", "over time", or "trend" mean a sustained pattern (at least 75% of readings). The current reading is informational and never proposes an action.
 - **Negation, ranking, and conjunction** are answered from the same analyses. Their results are informational and never propose an action.
 - **Re-planning loop:** when a proposal's evidence score is below 0.70, the graph widens the lookback to 30 days and analyzes again, once. That is the only cycle in the graph. If the evidence is still weak, the proposal is refused with a visible trace.
 - **Known gaps:** the login throttle is in memory and per process, so it does not coordinate across replicas. No RBAC beyond two roles, and mock tools only.

@@ -232,6 +232,37 @@ def storage_constrained(data: FleetData, device_type: str | None = None) -> Find
     )
 
 
+def ram_now(data: FleetData, device_type: str | None = None) -> Finding:
+    """Devices whose latest RAM reading is at or above the threshold. A single reading, not a sustained pattern."""
+    hits: list[tuple[MetricRecord, DeviceRecord]] = []
+    for device in data.in_scope(device_type):
+        series = data.series(device.device_id, "ram_used_pct")
+        if series and series[-1].value >= RAM_THRESHOLD_PCT:
+            hits.append((series[-1], device))
+    if not hits:
+        return _empty("ram_now", f"devices at or above {RAM_THRESHOLD_PCT:.0f}% RAM use right now", data, device_type)
+    hits.sort(key=lambda item: (-item[0].value, item[1].device_id))
+    worst_latest, worst_device = hits[0]
+    return Finding(
+        kind="ram_now",
+        finding=(
+            f"{len(hits)} device(s) at or above {RAM_THRESHOLD_PCT:.0f}% RAM use in their latest reading: "
+            + ", ".join(f"{d.device_id} ({r.value:.1f}%)" for r, d in hits)
+        ),
+        evidence=[f"{d.device_id}: ram_used_pct={r.value:.1f}% (latest snapshot)" for r, d in hits],
+        explanation=(
+            "The latest ram_used_pct reading is at or above the threshold. This is a point-in-time reading; "
+            "ask about 'consistently' or 'over time' for a sustained pattern."
+        ),
+        severity="medium",
+        device_ids=[d.device_id for _, d in hits],
+        citations=[_metric_citation(r, "latest RAM reading at or above threshold") for r, _ in hits],
+        worst_device_id=worst_device.device_id,
+        sample_count=data.sample_count(worst_device.device_id),
+        details={"highest_ram_pct": worst_latest.value},
+    )
+
+
 def ram_constrained(data: FleetData, device_type: str | None = None) -> Finding:
     return _sustained_threshold(
         data,

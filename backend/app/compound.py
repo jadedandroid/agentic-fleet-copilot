@@ -14,6 +14,7 @@ from .intent import RANK_METRICS, QuerySpec
 Analysis = Callable[[FleetData, str | None], Finding]
 
 TOPIC_LABELS = {
+    "ram_now": "at or above 90% RAM use right now",
     "low_disk": "low on disk space",
     "storage_trend": "consistently low on storage",
     "ram_constrained": "consistently RAM-constrained",
@@ -34,7 +35,7 @@ def _population(data: FleetData, topic: str, device_type: str | None):
     devices = data.in_scope(device_type)
     if topic in _DISK_TOPICS:
         return [d for d in devices if data.series(d.device_id, "disk_free_pct")]
-    if topic == "ram_constrained":
+    if topic in ("ram_constrained", "ram_now"):
         return [d for d in devices if data.series(d.device_id, "ram_used_pct")]
     if topic == "battery_eol":
         return [d for d in devices if data.series(d.device_id, "battery_health_pct")]

@@ -103,6 +103,7 @@ _ASC_WORDS = frozenset({"least", "lowest", "fewest", "smallest", "minimum", "min
 _DESC_WORDS = frozenset({"most", "highest", "biggest", "largest", "maximum", "max", "top", "best"})
 # Metric and default direction per topic. Disk ranks by free space, so the most constrained device ranks first.
 RANK_METRICS: dict[str, str] = {
+    "ram_now": "ram_used_pct",
     "ram_constrained": "ram_used_pct",
     "low_disk": "disk_free_pct",
     "storage_trend": "disk_free_pct",
@@ -134,6 +135,10 @@ def _refuse(kind: str, reason: str) -> QuerySpec:
     return QuerySpec(kind="unsupported" if kind != "cross_tenant" else kind, refusal=reason)
 
 
+# Words that make a RAM question about a sustained pattern. Without them, RAM means the current reading.
+_SUSTAINED_WORDS = re.compile(r"\bconsisten\w*|\bpersisten\w*|\balways\b|over time|\btrend\w*|\brepeatedly\b")
+
+
 def parse_query(question: str, current_tenant: str, known_tenants: Iterable[tuple[str, str]]) -> QuerySpec:
     """Interpret a question as one of the supported operations, or refuse with a reason.
 
@@ -150,6 +155,8 @@ def parse_query(question: str, current_tenant: str, known_tenants: Iterable[tupl
     negated = bool(_NEGATIONS.intersection(tokens))
     superlative = bool(_SUPERLATIVES.intersection(tokens))
     topics = _topics([intent for intent, pattern in _RULES if pattern.search(normalized)])
+    if "ram_constrained" in topics and not _SUSTAINED_WORDS.search(normalized):
+        topics = ["ram_now" if topic == "ram_constrained" else topic for topic in topics]
 
     if not topics:
         return QuerySpec(kind="unsupported", refusal=OUT_OF_SCOPE_REFUSAL)
