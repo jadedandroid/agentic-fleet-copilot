@@ -57,11 +57,12 @@ def test_fleet_snapshots_and_agent_records_can_share_one_file():
     assert {d.device_id for s in snapshots for d in s.devices} == {"fleet-1", "MAC-9"}
 
 
-def test_one_upload_must_hold_one_company():
+def test_one_upload_can_hold_several_companies_tagged_by_source():
     raw = json.dumps([_agent_record("MAC-1", company="acme-001"), _agent_record("MAC-2", company="globex-002")]).encode()
-    with pytest.raises(UploadRejected) as caught:
-        parse_upload(raw, "application/json", "x.json", "upload:x.json")
-    assert "one company" in caught.value.errors[0]["error"]
+    snapshots = parse_upload(raw, "application/json", "x.json", "upload:x.json")
+    sources = {snapshot.source for snapshot in snapshots}
+    assert sources == {"dataset:device-telemetry:acme-001", "dataset:device-telemetry:globex-002"}
+    assert {d.device_id for s in snapshots for d in s.devices} == {"MAC-1", "MAC-2"}
 
 
 def test_a_bad_ndjson_line_is_reported_with_its_line_number():

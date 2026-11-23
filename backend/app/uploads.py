@@ -70,7 +70,7 @@ def _parse_json(raw: bytes, ndjson: bool) -> list[FleetSnapshotIn]:
     - a fleet snapshot: {"source", "observed_at", "devices": [...]}, or a list of them
     - an agent record (the take-home dataset format), as a JSON array or as NDJSON, one record per line
 
-    A file may mix the first two shapes. Agent records in one upload must share one company_id.
+    A file may mix the first two shapes and several companies. Each agent-record snapshot is tagged with its company.
     """
     try:
         text = raw.decode("utf-8-sig")
@@ -120,14 +120,13 @@ def _parse_json(raw: bytes, ndjson: bool) -> list[FleetSnapshotIn]:
         raise UploadRejected(errors)
 
     if agent_records:
-        companies = {str(record.get("company_id")) for _, record in agent_records}
-        if len(companies) != 1:
-            raise UploadRejected([_error(None, f"one upload must hold one company; found {sorted(companies)}")])
         try:
             mapped = build_snapshots(agent_records)
         except DatasetRejected as error:
             raise UploadRejected([_error(item.line, item.message) for item in error.errors]) from None
-        snapshots.extend(next(iter(mapped.values())))
+        for company, company_snapshots in mapped.items():
+            # The company is kept in the snapshot source, so every citation can be traced to its company's upload.
+            snapshots.extend(snapshot.model_copy(update={"source": f"{snapshot.source}:{company}"}) for snapshot in company_snapshots)
     if not snapshots:
         raise UploadRejected([_error(None, "No records found in the upload")])
     return snapshots
