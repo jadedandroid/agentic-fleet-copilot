@@ -109,25 +109,21 @@ On the frontend, `NEXT_PUBLIC_API_BASE_URL` sets the backend address (default `h
 
 ## Deploy
 
-The frontend is deployed on Vercel: https://agentic-fleet-copilot-ui.vercel.app
+The frontend runs on Vercel: https://agentic-fleet-copilot-ui.vercel.app
 
-To redeploy:
+Vercel cannot reach `localhost`, so the page uses a public address for the backend. The current setup exposes the backend running on the owner's machine through a Cloudflare quick tunnel:
 
 ```bash
+cloudflared tunnel --url http://127.0.0.1:8000   # prints https://<name>.trycloudflare.com
 cd frontend
-npx vercel link --yes --project agentic-fleet-copilot-ui
+npx vercel env rm NEXT_PUBLIC_API_BASE_URL production --yes
+printf '%s' "https://<name>.trycloudflare.com" | npx vercel env add NEXT_PUBLIC_API_BASE_URL production
 npx vercel deploy --prod --yes
 ```
 
-Vercel hosts the frontend only. The backend keeps state in SQLite and streams answers over Server-Sent Events, so it needs a host that runs a long-lived process (for example Render or Fly.io).
+Limits of this setup: the page works only while the backend and the tunnel are running, and the tunnel address changes each time it restarts, so the frontend must be redeployed. The backend must allow the Vercel origin, which it does when started with `AFC_CORS_ORIGINS=https://agentic-fleet-copilot-ui.vercel.app,http://localhost:3000`. For a permanent setup, host the backend on a service that runs long-lived processes (for example Render or Fly.io) and set `NEXT_PUBLIC_API_BASE_URL` to its address.
 
-To connect the deployed frontend to a backend:
-
-1. Start the backend with the frontend's origin allowed:
-   `AFC_CORS_ORIGINS=https://agentic-fleet-copilot-ui.vercel.app,http://localhost:3000 uvicorn app.main:app --port 8000`
-2. Build the frontend with `NEXT_PUBLIC_API_BASE_URL` pointing at that backend, then redeploy.
-
-**If GitHub is unavailable,** the frontend can still be redeployed from your local copy of the `frontend/` folder with the commands above. The Vercel deployment itself is not a source backup, so keep a copy of the repository.
+**If GitHub is unavailable,** redeploy the frontend from the local `frontend/` folder with the commands above.
 
 ## Tests
 
