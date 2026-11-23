@@ -52,3 +52,15 @@ def test_a_short_demo_password_is_refused_at_startup(tmp_path, monkeypatch):
         assert "at least 12" in str(error)
     else:
         raise AssertionError("a short demo password must not start the server")
+
+
+def test_restarting_with_a_new_demo_password_changes_it(tmp_path, monkeypatch):
+    monkeypatch.setenv("AFC_DEMO_ACCOUNT_PASSWORD", DEMO_PASSWORD)
+    client = _client(tmp_path)
+    assert client.post("/api/v1/auth/login", json={"email": "admin@demo.local", "password": DEMO_PASSWORD}).status_code == 200
+
+    new_password = "a-second-demo-password-456"
+    monkeypatch.setenv("AFC_DEMO_ACCOUNT_PASSWORD", new_password)
+    restarted = _client(tmp_path)
+    assert restarted.post("/api/v1/auth/login", json={"email": "admin@demo.local", "password": new_password}).status_code == 200
+    assert restarted.post("/api/v1/auth/login", json={"email": "admin@demo.local", "password": DEMO_PASSWORD}).status_code == 401

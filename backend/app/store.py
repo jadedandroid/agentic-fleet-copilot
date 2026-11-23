@@ -492,6 +492,11 @@ class TelemetryStore:
             self._commit()
         return existed
 
+    def set_user_password(self, user_id: str, password_hash: str) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE users SET password_hash = ? WHERE user_id = ?", [password_hash, user_id])
+            self._commit()
+
     def delete_session(self, token_hash: str) -> None:
         with self._lock:
             self._conn.execute("DELETE FROM sessions WHERE token_hash = ?", [token_hash])

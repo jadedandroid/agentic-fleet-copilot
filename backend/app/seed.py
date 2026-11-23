@@ -34,7 +34,12 @@ def ensure_demo_account(store: TelemetryStore, password: str, now: datetime) -> 
     from .identity import hash_password, validate_password
 
     validate_password(password)
-    if store.tenant_exists(DEMO_TENANT) or store.get_user_by_email(DEMO_EMAIL) is not None:
+    existing = store.get_user_by_email(DEMO_EMAIL)
+    if existing is not None and existing["tenant_id"] == DEMO_TENANT and store.is_tenant_active(DEMO_TENANT):
+        # The demo password follows the environment, so it can be changed by restarting with a new value.
+        store.set_user_password(existing["user_id"], hash_password(password))
+        return False
+    if store.tenant_exists(DEMO_TENANT) or existing is not None:
         return False
     store.create_tenant_with_admin(DEMO_TENANT, "Demo", str(uuid4()), DEMO_EMAIL, hash_password(password), now)
     for snapshot in build_demo_snapshots("acme", now):

@@ -41,7 +41,7 @@ Open http://localhost:3000, then sign in (see below).
 AFC_DEMO_ACCOUNT_PASSWORD='<choose-a-password>' uvicorn app.main:app --port 8000
 ```
 
-Sign in with email `admin@demo.local` and that password. Do not set this variable on a public server.
+Sign in with email `admin@demo.local` and that password. Restarting with a different value changes the password. Do not set this variable on a public server.
 
 *Real accounts:* the platform admin creates tenants with the bootstrap key:
 
