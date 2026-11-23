@@ -249,6 +249,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ),
         as_of: str | None = Query(default=None, alias="asOf"),
         llm_planner: bool = Query(default=False, alias="llmPlanner"),
+        llm_interpret: bool = Query(default=False, alias="llmInterpret"),
         tenant_param: str | None = Query(default=None, alias="tenantId"),
     ) -> StreamingResponse:
         # EventSource cannot send headers, so the credential and tenant travel as query params. Demo trade-off, documented in README.
@@ -260,6 +261,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             context_window_minutes=context_window_minutes,
             as_of=as_of,
             llm_planner=llm_planner,
+            llm_interpret=llm_interpret,
         )
 
         def event_stream() -> Iterator[str]:

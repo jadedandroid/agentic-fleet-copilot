@@ -117,6 +117,9 @@ class CopilotQueryRequest(BaseModel):
     allow_remediation: StrictBool = False
     # Ask the LLM planner to place questions the rules cannot. Only takes effect when the judge is enabled.
     llm_planner: StrictBool = False
+    # Let the LLM rewrite the answer. Accepted only if every number and identifier in it appears in the evidence.
+    # Sends the evidence (device and employee IDs, metrics) to OpenAI. Only takes effect when the judge is enabled.
+    llm_interpret: StrictBool = False
     # Reference time for the lookback window. Omit for the server's current time. Pin it for reproducible answers.
     as_of: datetime | None = None
 

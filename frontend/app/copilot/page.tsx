@@ -34,6 +34,8 @@ function CopilotWorkspace() {
   const [allowRemediation, setAllowRemediation] = useState(true);
   // Only works when the server has the judge enabled with a key. Unrecognized questions are then planned by the LLM.
   const [llmPlanner, setLlmPlanner] = useState(false);
+  // The LLM rewrites the answer; the server keeps its draft unless every number and ID in the rewrite is in the evidence.
+  const [llmInterpret, setLlmInterpret] = useState(false);
   // Blank means the server's current time. A fixed value makes answers reproducible, e.g. for the dataset.
   const [asOf, setAsOf] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
@@ -87,6 +89,7 @@ function CopilotWorkspace() {
       question,
       allowRemediation: String(allowRemediation),
       llmPlanner: String(llmPlanner),
+      llmInterpret: String(llmInterpret),
       contextWindowMinutes: "525600"
     });
     if (session?.scopeTenantId) {
@@ -219,6 +222,13 @@ function CopilotWorkspace() {
           <label className="flex items-center gap-2 text-sm" title="Needs the server's judge enabled with an OpenAI key">
             <input type="checkbox" checked={llmPlanner} onChange={(event) => setLlmPlanner(event.target.checked)} />
             LLM planner for unrecognized questions
+          </label>
+          <label
+            className="flex items-center gap-2 text-sm"
+            title="Sends the evidence (device and employee IDs, metrics, times) to OpenAI. Needs the server's judge enabled with a key."
+          >
+            <input type="checkbox" checked={llmInterpret} onChange={(event) => setLlmInterpret(event.target.checked)} />
+            LLM-written answer, verified (sends evidence to OpenAI)
           </label>
           {needsTenant && (
             <p className="text-sm text-amber-300">Choose a tenant in the top bar to ask questions about its data.</p>

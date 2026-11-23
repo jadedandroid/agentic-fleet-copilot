@@ -36,6 +36,7 @@ from .analytics import (
 from .audit import AuditLogger
 from . import compound
 from .intent import OUT_OF_SCOPE_REFUSAL, QuerySpec, device_type_scope, parse_query
+from .llm_interpreter import INTERPRET_MODEL, interpret_answer
 from .llm_planner import plan_with_llm, planner_enabled
 from .models import (
     MAX_LOOKBACK_MINUTES,
@@ -74,6 +75,7 @@ class CopilotState(TypedDict, total=False):
     device_scope: str | None
     query: dict[str, Any]
     llm_planner: bool
+    llm_interpret: bool
     planner: str
     refusal_reason: str | None
     finding: dict[str, Any] | None
@@ -352,16 +354,24 @@ class FleetCopilotService:
                 "traces": [_trace("guardrail", "Refused to answer", {"reason": state["refusal_reason"]})],
             }
         finding = state["finding"]
-        return {
-            "answer": f"{finding['finding']} {finding['explanation']}",
-            "traces": [
-                _trace(
-                    "compose",
-                    "Composed a grounded answer from cited telemetry",
-                    {"citations": len(finding["citations"])},
-                )
-            ],
-        }
+        draft = f"{finding['finding']} {finding['explanation']}"
+        traces = [
+            _trace("compose", "Composed a grounded answer from cited telemetry", {"citations": len(finding["citations"])})
+        ]
+        if not state.get("llm_interpret"):
+            return {"answer": draft, "traces": traces}
+
+        verdict = interpret_answer(state["question"], draft, finding)
+        traces.append(
+            _trace(
+                "interpret",
+                "Rewrote the answer with the LLM and verified it against the evidence"
+                if verdict.accepted
+                else "Kept the deterministic answer: the LLM rewrite failed verification",
+                {"model": INTERPRET_MODEL, "accepted": verdict.accepted, "reason": verdict.reason},
+            )
+        )
+        return {"answer": verdict.answer, "traces": traces}
 
     def _propose_action(self, state: CopilotState) -> dict[str, Any]:
         finding = state.get("finding")
@@ -478,6 +488,7 @@ class FleetCopilotService:
             "as_of": (request.as_of or datetime.now(tz=UTC)).isoformat(),
             "allow_remediation": request.allow_remediation,
             "llm_planner": request.llm_planner,
+            "llm_interpret": request.llm_interpret,
             "traces": [],
         }
         for update in self._graph.stream(inputs, config, stream_mode="updates"):
