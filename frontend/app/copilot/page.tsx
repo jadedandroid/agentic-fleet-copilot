@@ -30,6 +30,8 @@ function CopilotWorkspace() {
   const token = session?.token ?? "";
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
   const [allowRemediation, setAllowRemediation] = useState(true);
+  // Only works when the server has the judge enabled with a key. Unrecognized questions are then planned by the LLM.
+  const [llmPlanner, setLlmPlanner] = useState(false);
   // Blank means the server's current time. A fixed value makes answers reproducible, e.g. for the dataset.
   const [asOf, setAsOf] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
@@ -82,6 +84,7 @@ function CopilotWorkspace() {
       apiKey: token,
       question,
       allowRemediation: String(allowRemediation),
+      llmPlanner: String(llmPlanner),
       contextWindowMinutes: asOf ? "43200" : "20160"
     });
     if (asOf) {
@@ -205,6 +208,10 @@ function CopilotWorkspace() {
               onChange={(event) => setAllowRemediation(event.target.checked)}
             />
             Enable remediation proposal
+          </label>
+          <label className="flex items-center gap-2 text-sm" title="Needs the server's judge enabled with an OpenAI key">
+            <input type="checkbox" checked={llmPlanner} onChange={(event) => setLlmPlanner(event.target.checked)} />
+            LLM planner for unrecognized questions
           </label>
           <button
             onClick={runCopilot}

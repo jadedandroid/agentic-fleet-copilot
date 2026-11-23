@@ -201,6 +201,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             le=MAX_LOOKBACK_MINUTES,
         ),
         as_of: str | None = Query(default=None, alias="asOf"),
+        llm_planner: bool = Query(default=False, alias="llmPlanner"),
     ) -> StreamingResponse:
         # EventSource cannot send headers, so the credential travels as a query param. Demo trade-off, documented in README.
         principal = principal_for(api_key)
@@ -210,6 +211,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_remediation=allow_remediation,
             context_window_minutes=context_window_minutes,
             as_of=as_of,
+            llm_planner=llm_planner,
         )
 
         def event_stream() -> Iterator[str]:

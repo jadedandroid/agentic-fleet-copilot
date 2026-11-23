@@ -115,6 +115,8 @@ class CopilotQueryRequest(BaseModel):
     question: StrictStr = Field(min_length=1, max_length=500)
     context_window_minutes: StrictInt = Field(default=DEFAULT_LOOKBACK_MINUTES, ge=5, le=MAX_LOOKBACK_MINUTES)
     allow_remediation: StrictBool = False
+    # Ask the LLM planner to place questions the rules cannot. Only takes effect when the judge is enabled.
+    llm_planner: StrictBool = False
     # Reference time for the lookback window. Omit for the server's current time. Pin it for reproducible answers.
     as_of: datetime | None = None
 

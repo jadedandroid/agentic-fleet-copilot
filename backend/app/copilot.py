@@ -36,6 +36,7 @@ from .analytics import (
 from .audit import AuditLogger
 from . import compound
 from .intent import OUT_OF_SCOPE_REFUSAL, QuerySpec, device_type_scope, parse_query
+from .llm_planner import plan_with_llm, planner_enabled
 from .models import (
     MAX_LOOKBACK_MINUTES,
     Citation,
@@ -72,6 +73,8 @@ class CopilotState(TypedDict, total=False):
     intent: str
     device_scope: str | None
     query: dict[str, Any]
+    llm_planner: bool
+    planner: str
     refusal_reason: str | None
     finding: dict[str, Any] | None
     answer: str
@@ -220,6 +223,21 @@ class FleetCopilotService:
 
     def _route_intent(self, state: CopilotState) -> dict[str, Any]:
         spec: QuerySpec = parse_query(state["question"], state["tenant_id"], tuple(self._known_tenants()))
+        planner = "rules"
+        # The LLM is consulted only when the rules found no supported topic. Explicit negation, superlative, and
+        # multi-topic refusals stay deterministic.
+        if (
+            state.get("llm_planner")
+            and planner_enabled()
+            and spec.kind == "unsupported"
+            and spec.refusal == OUT_OF_SCOPE_REFUSAL
+        ):
+            proposed = plan_with_llm(state["question"])
+            if proposed is not None:
+                spec = proposed
+                planner = "llm"
+            else:
+                planner = "rules (llm unavailable or rejected)"
         scope = device_type_scope(state["question"])
         refusal = None
         if spec.kind in ("cross_tenant", "unsupported"):
@@ -236,12 +254,19 @@ class FleetCopilotService:
             "intent": intent,
             "device_scope": scope,
             "query": query,
+            "planner": planner,
             "refusal_reason": refusal,
             "traces": [
                 _trace(
                     "router",
-                    f"Classified question as {spec.label}",
-                    {"intent": intent, "operation": spec.kind, "topics": list(spec.topics), "device_scope": scope},
+                    f"Classified question as {spec.label} ({planner})",
+                    {
+                        "intent": intent,
+                        "operation": spec.kind,
+                        "topics": list(spec.topics),
+                        "device_scope": scope,
+                        "planner": planner,
+                    },
                 )
             ],
         }
@@ -452,6 +477,7 @@ class FleetCopilotService:
             "window_minutes": request.context_window_minutes,
             "as_of": (request.as_of or datetime.now(tz=UTC)).isoformat(),
             "allow_remediation": request.allow_remediation,
+            "llm_planner": request.llm_planner,
             "traces": [],
         }
         for update in self._graph.stream(inputs, config, stream_mode="updates"):

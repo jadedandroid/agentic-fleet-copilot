@@ -185,6 +185,15 @@ The default run covers 119 deterministic tests:
 - `tests/test_dataset_adapter.py`: the mapping, and each way it can reject a record.
 - `tests/test_dataset_eval.py`: an oracle evaluation on the real dataset. Expected answers are computed directly from the NDJSON file, with the thresholds written out in the test, and the copilot is never used to grade itself. Cited values must equal the raw values. The suite is skipped if the dataset file is absent.
 
+### LLM-assisted planner (optional, gated)
+
+Questions the rules cannot place (no supported topic) can be planned by an LLM. It runs only when:
+
+1. the server has the judge enabled: `AFC_RAGAS_ENABLED=1` and `OPENAI_API_KEY` set, and
+2. the request asks for it: `llm_planner: true` (the copilot page checkbox, or `llmPlanner=true` on the stream).
+
+The model's answer must match a strict schema (one of four operations, topics from the supported list, a bounded limit) and pass consistency checks. Anything else falls back to the rules and the refusal stands. Negated, superlative, cross-tenant, and multi-topic questions never reach the model, so it cannot override them. Only the question text and the topic list go to OpenAI; no telemetry is sent. The trace records whether the rules or the LLM placed the question.
+
 ### Judge keys (bring your own key)
 
 The grounding judge is off by default. You can run it on any answer in the copilot page by entering an OpenAI key:
