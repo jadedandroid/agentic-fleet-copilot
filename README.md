@@ -101,7 +101,7 @@ Pending approvals are checkpointed to `data/checkpoints.sqlite3` (LangGraph `Sql
 
 The agent is an explicit LangGraph state graph, not a prompt wrapper. Each stage is a node, and the graph is compiled with a SQLite checkpointer so it can pause and resume across restarts.
 
-1. **Route** classifies the question into one supported intent. The router corrects one-letter typos in longer words, maps common paraphrases (for example "hard drive" to disk), and refuses negated questions, superlatives like "most" or "lowest", and questions that span several topics, each with a stated reason. A misspelled rival company name is still treated as cross-tenant. Its behavior is covered by `tests/test_router_robustness.py`.
+1. **Route** interprets the question as one of four operations: a single analysis, a negation (the complement of one topic), a ranking (a superlative on one metric, such as "most RAM" or "top 5"), or a conjunction (several topics joined by "and", listing devices that match all of them). It corrects one-letter typos in longer words, maps common paraphrases (for example "hard drive" to disk), and refuses only what the telemetry cannot support, with a stated reason. A misspelled rival company name is still treated as cross-tenant.
     (low disk, storage trend, RAM pressure, failing compliance, compliance drift, OS age, battery end-of-life, or cross-tenant or unsupported, which are refused). A mention of another tenant's name is refused, but a caller's own company name never is.
 1a. **Plan** records the steps it will take (retrieve, analyze, compose, propose, and whether remediation is allowed) in the trace before any data is read.
 2. **Retrieve and analyze** loads the caller's devices, metrics, and compliance results for the window, then runs one deterministic analysis.
@@ -137,6 +137,7 @@ The agent is an explicit LangGraph state graph, not a prompt wrapper. Each stage
 - **Raw-body uploads.** No multipart dependency. The CSV format is one device per row, grouped by `observed_at`.
 - **Email as the login identifier, unique platform-wide.** This keeps login simple. The trade-off is that a tenant cannot reuse an address for another tenant.
 - **Audit kept after tenant deletion.** It is append-only by design. Audit payloads still contain device IDs for a deleted tenant, and only platform admins can read them.
+- **Negation, ranking, and conjunction** are answered from the same analyses. Their results are informational and never propose an action.
 - **Re-planning loop:** when a proposal's evidence score is below 0.70, the graph widens the lookback to 30 days and analyzes again, once. That is the only cycle in the graph. If the evidence is still weak, the proposal is refused with a visible trace.
 - **Known gaps:** the login throttle is in memory and per process, so it does not coordinate across replicas. No RBAC beyond two roles, and mock tools only.
 

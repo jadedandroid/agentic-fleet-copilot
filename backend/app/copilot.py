@@ -33,7 +33,8 @@ from .analytics import (
     storage_constrained,
 )
 from .audit import AuditLogger
-from .intent import classify, classify_with_reason, device_type_scope
+from . import compound
+from .intent import OUT_OF_SCOPE_REFUSAL, QuerySpec, device_type_scope, parse_query
 from .models import (
     MAX_LOOKBACK_MINUTES,
     Citation,
@@ -68,6 +69,7 @@ class CopilotState(TypedDict, total=False):
     allow_remediation: bool
     intent: str
     device_scope: str | None
+    query: dict[str, Any]
     refusal_reason: str | None
     finding: dict[str, Any] | None
     answer: str
@@ -215,21 +217,31 @@ class FleetCopilotService:
         return builder.compile(checkpointer=self._checkpointer)
 
     def _route_intent(self, state: CopilotState) -> dict[str, Any]:
-        intent, detail = classify_with_reason(state["question"], state["tenant_id"], tuple(self._known_tenants()))
+        spec: QuerySpec = parse_query(state["question"], state["tenant_id"], tuple(self._known_tenants()))
         scope = device_type_scope(state["question"])
         refusal = None
-        if intent == "cross_tenant":
-            refusal = "Cross-tenant access is refused. Queries only read the caller's own tenant."
-        elif intent == "unsupported":
-            refusal = detail or (
-                "The question is outside the supported telemetry analyses: low disk, storage trends, "
-                "RAM pressure, failing compliance, compliance drift, OS age, and battery end-of-life."
-            )
+        if spec.kind in ("cross_tenant", "unsupported"):
+            refusal = spec.refusal or OUT_OF_SCOPE_REFUSAL
+        intent = spec.topics[0] if spec.kind == "single" else spec.kind
+        query = {
+            "kind": spec.kind,
+            "topics": list(spec.topics),
+            "descending": spec.descending,
+            "limit": spec.limit,
+            "metric": spec.metric,
+        }
         return {
             "intent": intent,
             "device_scope": scope,
+            "query": query,
             "refusal_reason": refusal,
-            "traces": [_trace("router", f"Classified intent as {intent}", {"intent": intent, "device_scope": scope})],
+            "traces": [
+                _trace(
+                    "router",
+                    f"Classified question as {spec.label}",
+                    {"intent": intent, "operation": spec.kind, "topics": list(spec.topics), "device_scope": scope},
+                )
+            ],
         }
 
     def _retrieve_and_analyze(self, state: CopilotState) -> dict[str, Any]:
@@ -253,7 +265,23 @@ class FleetCopilotService:
                 },
             )
         ]
-        finding = ANALYSES[state["intent"]](data, state.get("device_scope"))
+        query = state.get("query") or {"kind": "single"}
+        if query["kind"] in ("negated", "ranking", "conjunction"):
+            spec = QuerySpec(
+                kind=query["kind"],
+                topics=tuple(query["topics"]),
+                descending=query["descending"],
+                limit=query["limit"],
+                metric=query["metric"],
+            )
+            try:
+                finding = compound.run(spec, data, state.get("device_scope"), ANALYSES)
+            except compound.Unanswerable as reason:
+                return {"finding": None, "refusal_reason": str(reason), "replan": False, "traces": [
+                    _trace("guardrail", "Refused: telemetry cannot answer this question", {"reason": str(reason)})
+                ]}
+        else:
+            finding = ANALYSES[state["intent"]](data, state.get("device_scope"))
         finding_dict = asdict(finding)
         traces.append(
             _trace(

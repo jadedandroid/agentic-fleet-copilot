@@ -9,6 +9,7 @@ from __future__ import annotations
 import difflib
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 INTENTS = (
     "cross_tenant",
@@ -87,59 +88,139 @@ def _normalize(question: str) -> tuple[list[str], str]:
     return tokens, " ".join(tokens)
 
 
-def _resolve(matches: list[str]) -> str:
-    """Pick one intent, or "unsupported" when the question spans several topics.
-
-    A specific rule suppresses the general rule it overlaps with: drift over failing compliance, and storage trend over
-    low disk. Anything still matching more than one intent is ambiguous, so it is refused.
-    """
+def _topics(matches: list[str]) -> list[str]:
+    """Matched topics after suppression: drift wins over failing compliance, storage trend over low disk."""
     found = set(matches)
     if "compliance_drift" in found:
         found.discard("failing_compliance")
     if "storage_trend" in found:
         found.discard("low_disk")
-    if len(found) == 1:
-        return found.pop()
-    return "unsupported"
+    return [intent for intent, _ in _RULES if intent in found]
 
 
-def classify_with_reason(question: str, current_tenant: str, known_tenants: Iterable[tuple[str, str]]) -> tuple[str, str | None]:
-    """Route a question. Returns (intent, refusal reason). `known_tenants` are (tenant_id, display name) pairs.
+_CROSS_TENANT_REFUSAL = "Cross-tenant access is refused. Queries only read the caller's own tenant."
+_ASC_WORDS = frozenset({"least", "lowest", "fewest", "smallest", "minimum", "min", "bottom", "worst"})
+_DESC_WORDS = frozenset({"most", "highest", "biggest", "largest", "maximum", "max", "top", "best"})
+# Metric and default direction per topic. Disk ranks by free space, so the most constrained device ranks first.
+RANK_METRICS: dict[str, str] = {
+    "ram_constrained": "ram_used_pct",
+    "low_disk": "disk_free_pct",
+    "storage_trend": "disk_free_pct",
+    "battery_eol": "battery_health_pct",
+}
 
-    A mention of another tenant's ID or name is a cross-tenant request. The caller's own ID and name never count,
-    even when another tenant shares the word (for example "Acme" for tenant acme-001 and an older tenant named acme).
-    Retrieval is tenant-scoped either way, so this check guards intent, not data access.
+
+@dataclass(frozen=True)
+class QuerySpec:
+    """What the question asks for. `kind` is one of: single, negated, ranking, conjunction, cross_tenant, unsupported."""
+
+    kind: str
+    topics: tuple[str, ...] = ()
+    refusal: str | None = None
+    descending: bool = False
+    limit: int = 5
+    metric: str | None = None
+
+    @property
+    def label(self) -> str:
+        if self.kind in ("cross_tenant", "unsupported"):
+            return self.kind
+        if self.kind == "single":
+            return self.topics[0]
+        return f"{self.kind}:{'+'.join(self.topics)}"
+
+
+def _refuse(kind: str, reason: str) -> QuerySpec:
+    return QuerySpec(kind="unsupported" if kind != "cross_tenant" else kind, refusal=reason)
+
+
+def parse_query(question: str, current_tenant: str, known_tenants: Iterable[tuple[str, str]]) -> QuerySpec:
+    """Interpret a question as one of the supported operations, or refuse with a reason.
+
+    - single: one topic, as asked.
+    - negated: one topic, inverted. "not low on disk" lists devices that are not low on disk.
+    - ranking: a superlative on one topic's metric. "most RAM" lists the top devices by RAM use.
+    - conjunction: several topics joined with "and". Lists devices that match all of them.
+    Negation combined with a ranking or with several topics is refused, because the meaning is ambiguous.
+    """
+    if mentions_other_tenant(question, current_tenant, known_tenants):
+        return QuerySpec(kind="cross_tenant", refusal=_CROSS_TENANT_REFUSAL)
+
+    tokens, normalized = _normalize(question)
+    negated = bool(_NEGATIONS.intersection(tokens))
+    superlative = bool(_SUPERLATIVES.intersection(tokens))
+    topics = _topics([intent for intent, pattern in _RULES if pattern.search(normalized)])
+
+    if not topics:
+        return QuerySpec(kind="unsupported", refusal=OUT_OF_SCOPE_REFUSAL)
+    if negated and superlative:
+        return _refuse("unsupported", "A question cannot both negate a condition and rank devices. Ask one of those.")
+    if negated and len(topics) > 1:
+        return _refuse("unsupported", "A negated question must name one topic. Ask about one condition at a time.")
+    if negated:
+        return QuerySpec(kind="negated", topics=(topics[0],))
+    if superlative:
+        if len(topics) > 1:
+            return _refuse("unsupported", "Ranking applies to one topic at a time. Name the metric you want ranked.")
+        topic = topics[0]
+        if topic not in RANK_METRICS:
+            return _refuse("unsupported", f"Devices cannot be ranked by {topic.replace('_', ' ')}.")
+        words = set(tokens)
+        if topic == "low_disk" or topic == "storage_trend":
+            # "most free space" ranks by free space; any other disk superlative means the most constrained devices.
+            descending = bool(words & _DESC_WORDS) and "free" in words
+        elif topic == "battery_eol":
+            descending = bool(words & _DESC_WORDS)
+        else:
+            descending = not bool(words & _ASC_WORDS)
+        limit_match = re.search(r"\btop (\d{1,2})\b", normalized)
+        limit = int(limit_match.group(1)) if limit_match else 5
+        return QuerySpec(
+            kind="ranking",
+            topics=(topic,),
+            descending=descending,
+            limit=max(1, min(limit, 20)),
+            metric=RANK_METRICS[topic],
+        )
+    if len(topics) > 1:
+        return QuerySpec(kind="conjunction", topics=tuple(topics))
+    return QuerySpec(kind="single", topics=(topics[0],))
+
+
+OUT_OF_SCOPE_REFUSAL = (
+    "The question is outside the supported telemetry analyses: low disk, storage trends, RAM pressure, "
+    "failing compliance, compliance drift, OS age, and battery end-of-life."
+)
+
+
+def mentions_other_tenant(question: str, current_tenant: str, known_tenants: Iterable[tuple[str, str]]) -> bool:
+    """True when the question names another tenant, including a near-miss of its name.
+
+    The caller's own ID and name never count, even when another tenant shares the word (for example "Acme" for
+    tenant acme-001 and an older tenant named acme). Retrieval is tenant-scoped either way; this guards intent.
     """
     text = question.lower()
     if _GENERIC_CROSS_TENANT.search(text):
-        return "cross_tenant", None
+        return True
     tenants = list(known_tenants)
     own_terms = {term.lower() for tid, name in tenants if tid == current_tenant for term in (tid, name)}
     other_terms = {term.lower() for tid, name in tenants if tid != current_tenant for term in (tid, name)} - own_terms
     for term in other_terms:
         if re.search(rf"\b{re.escape(term)}\b", text):
-            return "cross_tenant", None
+            return True
     # Misspelled rival names ("Globx") are caught too. Tokens shorter than five letters are never fuzzy-matched.
-    words = re.findall(r"[a-z0-9]+", text)
-    for word in words:
+    for word in re.findall(r"[a-z0-9]+", text):
         if len(word) >= 5 and word not in own_terms and difflib.get_close_matches(word, sorted(other_terms), n=1, cutoff=0.85):
-            return "cross_tenant", None
-
-    tokens, normalized = _normalize(question)
-    if _NEGATIONS.intersection(tokens):
-        return "unsupported", "Negated questions are refused. Ask for the affected devices directly, for example 'which devices are low on disk space'."
-    if _SUPERLATIVES.intersection(tokens):
-        return "unsupported", "Rankings and superlatives such as 'most' or 'lowest' are not supported. Ask for the devices that meet a condition."
-
-    matches = [intent for intent, pattern in _RULES if pattern.search(normalized)]
-    intent = _resolve(matches)
-    if intent == "unsupported" and len(set(matches)) > 1:
-        return "unsupported", "The question touches several topics at once. Ask about one topic at a time."
-    return intent, None if intent != "unsupported" else None
+            return True
+    return False
 
 
 def classify(question: str, current_tenant: str, known_tenants: Iterable[tuple[str, str]]) -> str:
-    return classify_with_reason(question, current_tenant, known_tenants)[0]
+    """Intent label for a question: a topic, cross_tenant, or unsupported."""
+    spec = parse_query(question, current_tenant, known_tenants)
+    if spec.kind == "single":
+        return spec.topics[0]
+    return spec.label if spec.kind in ("cross_tenant", "unsupported") else spec.kind
 
 
 def device_type_scope(question: str) -> str | None:
