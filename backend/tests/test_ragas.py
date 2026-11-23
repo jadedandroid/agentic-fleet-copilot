@@ -77,17 +77,31 @@ def test_ragas_judge_scores_grounded_answers(tmp_path):
 
 
 def test_a_judge_that_returns_nan_is_reported_as_a_failure(monkeypatch):
-    """RAGAS returns NaN on metric errors. A report of NaN must never be written as if it were a result."""
-    import pandas as pd
+    """RAGAS returns NaN on metric errors. A report of NaN must never be written as if it were a result.
+
+    Uses a stand-in frame so the test does not need pandas, which the CI image does not install.
+    """
+    import types
+
     import ragas
 
     from app import grounding_judge
 
-    frame = pd.DataFrame({"faithfulness": [float("nan")], "context_precision": [float("nan")]})
+    class _Column:
+        dtype = types.SimpleNamespace(kind="f")
+
+        def mean(self):
+            return float("nan")
+
+    class _Frame:
+        columns = ["faithfulness", "context_precision"]
+
+        def __getitem__(self, name):
+            return _Column()
 
     class _Result:
         def to_pandas(self):
-            return frame
+            return _Frame()
 
     monkeypatch.setattr(ragas, "evaluate", lambda **kwargs: _Result())
     monkeypatch.setattr(grounding_judge, "REPORT_DIR", pytest.importorskip("pathlib").Path("/nonexistent-report-dir"))
