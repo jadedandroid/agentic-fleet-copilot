@@ -200,6 +200,8 @@ class GroundingJudgeRequest(BaseModel):
 
     question: StrictStr = Field(min_length=1, max_length=500)
     openai_api_key: SecretStr | None = Field(default=None, min_length=20, max_length=300)
+    as_of: datetime | None = None
+    context_window_minutes: StrictInt = Field(default=DEFAULT_LOOKBACK_MINUTES, ge=5, le=MAX_LOOKBACK_MINUTES)
 
 
 class JudgeKeySaveRequest(BaseModel):

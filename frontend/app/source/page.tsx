@@ -73,10 +73,15 @@ function SourceWorkspace() {
     setUploadErrors([]);
     setUploadOk(false);
     try {
-      const isJson = uploadFile.name.toLowerCase().endsWith(".json");
+      const name = uploadFile.name.toLowerCase();
+      const contentType = name.endsWith(".ndjson")
+        ? "application/x-ndjson"
+        : name.endsWith(".json")
+          ? "application/json"
+          : "text/csv";
       const response = await authorizedFetch(
         `/api/v1/fleet/uploads?filename=${encodeURIComponent(uploadFile.name)}`,
-        { method: "POST", headers: { "Content-Type": isJson ? "application/json" : "text/csv" }, body: uploadFile }
+        { method: "POST", headers: { "Content-Type": contentType }, body: uploadFile }
       );
       if (!response.ok) {
         setUploadMessage(await readError(response));
@@ -211,13 +216,13 @@ function SourceWorkspace() {
         <div>
           <h2 className="text-lg font-semibold text-cyan-300">Upload your data</h2>
           <p className="text-sm text-slate-400">
-            JSON uses the fleet snapshot format. CSV has one device per row, grouped by observed_at. The whole file is
+            JSON and NDJSON accept fleet snapshots or agent records (the take-home format). CSV has one device per row, grouped by observed_at. The whole file is
             checked first: if any row is wrong, nothing is stored.
           </p>
         </div>
         <input
           type="file"
-          accept=".json,.csv,application/json,text/csv"
+          accept=".json,.ndjson,.csv,application/json,application/x-ndjson,text/csv"
           onChange={(event) => void chooseUploadFile(event.target.files?.[0] ?? null)}
           className="block w-full text-sm text-slate-300 file:mr-4 file:rounded-md file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-slate-100"
         />

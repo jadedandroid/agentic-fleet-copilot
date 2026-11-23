@@ -372,7 +372,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="No judge key: enter one for this run, or save one that has not expired.",
             )
-        answer = copilot.run_query(principal.tenant_id, CopilotQueryRequest(question=payload.question, allow_remediation=False))
+        answer = copilot.run_query(
+            principal.tenant_id,
+            CopilotQueryRequest(
+                question=payload.question,
+                allow_remediation=False,
+                as_of=payload.as_of,
+                context_window_minutes=payload.context_window_minutes,
+            ),
+        )
         if answer.refusal_reason:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A refused answer has nothing to judge.")
         if not answer.citations:

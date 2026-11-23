@@ -13,6 +13,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from .dataset_adapter import DatasetRejected, build_snapshots
 from .models import ComplianceCheckIn, DeviceIn, FleetSnapshotIn
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
@@ -54,23 +55,82 @@ def _pydantic_messages(error: ValidationError) -> list[str]:
 def parse_upload(raw: bytes, content_type: str, filename: str, source_name: str) -> list[FleetSnapshotIn]:
     media = content_type.split(";")[0].strip().lower()
     lowered = filename.lower()
+    if "ndjson" in media or lowered.endswith(".ndjson"):
+        return _parse_json(raw, ndjson=True)
     if "json" in media or lowered.endswith(".json"):
-        return _parse_json(raw)
+        return _parse_json(raw, ndjson=False)
     if "csv" in media or lowered.endswith(".csv"):
         return _parse_csv(raw, source_name)
     raise UnsupportedUploadFormat("Upload must be JSON (application/json, .json) or CSV (text/csv, .csv)")
 
 
-def _parse_json(raw: bytes) -> list[FleetSnapshotIn]:
+def _parse_json(raw: bytes, ndjson: bool) -> list[FleetSnapshotIn]:
+    """Accept three JSON shapes, all validated before anything is stored:
+
+    - a fleet snapshot: {"source", "observed_at", "devices": [...]}, or a list of them
+    - an agent record (the take-home dataset format), as a JSON array or as NDJSON, one record per line
+
+    A file may mix the first two shapes. Agent records in one upload must share one company_id.
+    """
     try:
-        data = json.loads(raw.decode("utf-8-sig"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        raise UploadRejected([_error(None, "Body is not valid UTF-8 JSON")]) from None
-    try:
-        snapshot = FleetSnapshotIn.model_validate(data)
-    except ValidationError as error:
-        raise UploadRejected([_error(None, message) for message in _pydantic_messages(error)]) from None
-    return [snapshot]
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise UploadRejected([_error(None, "Body is not valid UTF-8")]) from None
+
+    items: list[tuple[int | None, Any]] = []
+    if not ndjson:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            ndjson = True  # several objects in one file, one per line
+        else:
+            if isinstance(data, list):
+                items = [(index + 1, record) for index, record in enumerate(data)]
+            else:
+                items = [(None, data)]
+    if ndjson:
+        items = []
+        errors: list[dict[str, Any]] = []
+        for number, line in enumerate(text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                items.append((number, json.loads(line)))
+            except json.JSONDecodeError:
+                errors.append(_error(number, "line is not valid JSON"))
+        if errors:
+            raise UploadRejected(errors)
+
+    snapshots: list[FleetSnapshotIn] = []
+    agent_records: list[tuple[int, dict[str, Any]]] = []
+    errors = []
+    for number, record in items:
+        if not isinstance(record, dict):
+            errors.append(_error(number, "record must be a JSON object"))
+        elif "devices" in record:
+            try:
+                snapshots.append(FleetSnapshotIn.model_validate(record))
+            except ValidationError as error:
+                errors.extend(_error(number, message) for message in _pydantic_messages(error))
+        elif "device_identity" in record:
+            agent_records.append((number or 0, record))
+        else:
+            errors.append(_error(number, "unrecognized record: expected a fleet snapshot ('devices') or an agent record ('device_identity')"))
+    if errors:
+        raise UploadRejected(errors)
+
+    if agent_records:
+        companies = {str(record.get("company_id")) for _, record in agent_records}
+        if len(companies) != 1:
+            raise UploadRejected([_error(None, f"one upload must hold one company; found {sorted(companies)}")])
+        try:
+            mapped = build_snapshots(agent_records)
+        except DatasetRejected as error:
+            raise UploadRejected([_error(item.line, item.message) for item in error.errors]) from None
+        snapshots.extend(next(iter(mapped.values())))
+    if not snapshots:
+        raise UploadRejected([_error(None, "No records found in the upload")])
+    return snapshots
 
 
 def _parse_csv(raw: bytes, source_name: str) -> list[FleetSnapshotIn]:

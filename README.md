@@ -62,6 +62,83 @@ The tenant API key is entered once and shared across pages through `sessionStora
 
 For local CORS, backend accepts both `http://localhost:3000` and `http://127.0.0.1:3000` by default. Override with `AFC_CORS_ORIGINS` (comma-separated).
 
+## Usage
+
+### Credentials and environment variables
+
+Set these on the backend. Use placeholders in shared files; never commit real values.
+
+| Variable | Purpose | Required |
+|---|---|---|
+| `AFC_BOOTSTRAP_ADMIN_KEY` | Platform admin key for creating and deleting tenants | To manage tenants |
+| `AFC_JUDGE_KEY_SECRET` | Fernet key that encrypts saved OpenAI keys | To save keys (generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) |
+| `AFC_RAGAS_ENABLED` | `1` enables the grounding judge and the LLM planner on the server | Only for judging and planning |
+| `OPENAI_API_KEY` | Server-side OpenAI key for the judge and planner | Only with `AFC_RAGAS_ENABLED=1` |
+| `AFC_API_KEYS` | Service keys as `key=tenant` pairs | Optional |
+| `AFC_SEED_DEMO` | `true` seeds the demo tenants | Optional |
+| `AFC_DATASET_ADMIN_PASSWORD` | Password for the dataset loader's tenant admins (12+ characters) | Only when loading the dataset |
+
+An OpenAI key is required only for the grounding judge and the LLM planner. Every other feature works without one.
+
+### Sign in and ask a question
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
+  -H "content-type: application/json" \
+  -d '{"email":"<your-admin-email>","password":"<your-password>"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+
+curl -s -X POST http://127.0.0.1:8000/api/v1/copilot/query \
+  -H "authorization: Bearer $TOKEN" -H "content-type: application/json" \
+  -d '{"question":"Which devices are NOT low on disk space?","allow_remediation":false}'
+```
+
+Questions that span the dataset's history need a reference time, for example `"as_of":"2026-06-12T12:00:00Z","context_window_minutes":43200`.
+
+### Upload telemetry
+
+`POST /api/v1/fleet/uploads?filename=<name>` takes the file as the raw body, with a `Content-Type` that matches it. The whole file is checked before anything is stored: any bad record rejects the upload and returns the row or line number.
+
+| Format | Content-Type | Accepted shape |
+|---|---|---|
+| JSON | `application/json` | A fleet snapshot (`{"source","observed_at","devices":[...]}`), a list of them, or agent records (the take-home format) as an array |
+| NDJSON | `application/x-ndjson` | One agent record or fleet snapshot per line |
+| CSV | `text/csv` | One device per row, grouped by `observed_at`. Required columns: `observed_at, device_id, employee_id, device_type, os_name, os_version, disk_free_pct, ram_used_pct` |
+
+An agent record needs `device_id`, `company_id`, `employee_id`, `collected_at`, `os`, `device_identity` (with a known `model_name`), `memory`, `disk_volumes`, and `compliance_results`. Each upload must hold one `company_id`. Limits: 5 MB, 500 devices per snapshot, 10,000 rows.
+
+```bash
+curl -s -X POST "http://127.0.0.1:8000/api/v1/fleet/uploads?filename=fleet.ndjson" \
+  -H "authorization: Bearer $TOKEN" -H "content-type: application/x-ndjson" \
+  --data-binary @device-telemetry-dataset.ndjson
+```
+
+### Grounding judge with your own OpenAI key
+
+The judge is off by default. Enter a key in the copilot page's judge panel, or call the API:
+
+```bash
+# Save a key for 7, 30, or 90 days (encrypted; needs AFC_JUDGE_KEY_SECRET on the server)
+curl -s -X PUT http://127.0.0.1:8000/api/v1/judge-key -H "authorization: Bearer $TOKEN" \
+  -H "content-type: application/json" -d '{"openai_api_key":"sk-<your-key>","ttl_days":30}'
+
+# Run the judge with the saved key, or pass "openai_api_key" for a one-time run
+curl -s -X POST http://127.0.0.1:8000/api/v1/evals/grounding-judge -H "authorization: Bearer $TOKEN" \
+  -H "content-type: application/json" -d '{"question":"Which devices at Acme are low on disk space?"}'
+
+# Remove the saved key
+curl -s -X DELETE http://127.0.0.1:8000/api/v1/judge-key -H "authorization: Bearer $TOKEN"
+```
+
+A rejected key returns `502` with the error type only. The key is never returned, logged, or audited.
+
+### Run the evaluations
+
+```bash
+cd backend
+pytest -q                                   # deterministic suites, no network
+AFC_RAGAS_ENABLED=1 OPENAI_API_KEY=sk-... pytest -m ragas -q   # live judge, writes evals/reports/
+```
+
 ## Authentication and tenants
 
 Users sign in with email and password (`POST /api/v1/auth/login`). The server returns a session token (8 hours by default, `AFC_SESSION_TTL_HOURS`) and the tenant and role come from the account, never from the client. Passwords are hashed with scrypt (standard library). Session tokens are random, and only their SHA-256 hash is stored.
