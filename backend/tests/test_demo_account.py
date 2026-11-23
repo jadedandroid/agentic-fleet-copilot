@@ -44,12 +44,12 @@ def test_the_demo_account_signs_in_and_has_sample_devices(tmp_path, monkeypatch)
     assert len(devices["devices"]) > 0
 
 
-def test_a_short_demo_password_is_refused_at_startup(tmp_path, monkeypatch):
-    monkeypatch.setenv("AFC_DEMO_ACCOUNT_PASSWORD", "short")
+def test_a_demo_password_under_six_characters_is_refused_at_startup(tmp_path, monkeypatch):
+    monkeypatch.setenv("AFC_DEMO_ACCOUNT_PASSWORD", "abc")
     try:
         _client(tmp_path)
     except ValueError as error:
-        assert "at least 12" in str(error)
+        assert "at least 6" in str(error)
     else:
         raise AssertionError("a short demo password must not start the server")
 

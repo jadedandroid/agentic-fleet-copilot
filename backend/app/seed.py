@@ -31,9 +31,11 @@ def ensure_demo_account(store: TelemetryStore, password: str, now: datetime) -> 
 
     Runs only when AFC_DEMO_ACCOUNT_PASSWORD is set. Do not enable it on a public server.
     """
-    from .identity import hash_password, validate_password
+    from .identity import hash_password
 
-    validate_password(password)
+    # Demo only: a short password is acceptable here. Real accounts keep the 12-character minimum.
+    if len(password) < 6:
+        raise ValueError("The demo password must be at least 6 characters")
     existing = store.get_user_by_email(DEMO_EMAIL)
     if existing is not None and existing["tenant_id"] == DEMO_TENANT and store.is_tenant_active(DEMO_TENANT):
         # The demo password follows the environment, so it can be changed by restarting with a new value.

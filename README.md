@@ -35,7 +35,7 @@ Open http://localhost:3000, then sign in (see below).
 
 **1. Sign in.**
 
-*Quick demo login (local only):* start the backend with a demo password (12+ characters). It creates a `demo` tenant with an admin account and six sample devices:
+*Quick demo login (local only):* start the backend with a demo password (6+ characters). It creates a `demo` tenant with an admin account and six sample devices:
 
 ```bash
 AFC_DEMO_ACCOUNT_PASSWORD='<choose-a-password>' uvicorn app.main:app --port 8000
