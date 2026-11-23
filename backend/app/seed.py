@@ -33,9 +33,8 @@ def ensure_demo_account(store: TelemetryStore, password: str, now: datetime) -> 
     """
     from .identity import hash_password
 
-    # Demo only: a short password is acceptable here. Real accounts keep the 12-character minimum.
-    if len(password) < 6:
-        raise ValueError("The demo password must be at least 6 characters")
+    if len(password) < 5:
+        raise ValueError("The password must be at least 5 characters")
     existing = store.get_user_by_email(DEMO_EMAIL)
     if existing is not None and existing["tenant_id"] == DEMO_TENANT and store.is_tenant_active(DEMO_TENANT):
         # The demo password follows the environment, so it can be changed by restarting with a new value.

@@ -12,7 +12,7 @@ from threading import Lock
 SCRYPT_N = 2**14
 SCRYPT_R = 8
 SCRYPT_P = 1
-MIN_PASSWORD_LENGTH = 12
+MIN_PASSWORD_LENGTH = 5
 _TENANT_ID_PATTERN = re.compile(r"[^a-z0-9]+")
 
 

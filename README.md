@@ -35,7 +35,7 @@ Open http://localhost:3000, then sign in (see below).
 
 **1. Sign in.**
 
-*Quick demo login (local only):* start the backend with a demo password (6+ characters). It creates a `demo` tenant with an admin account and six sample devices:
+*Quick demo login (local only):* start the backend with a demo password (5+ characters). It creates a `demo` tenant with an admin account and six sample devices:
 
 ```bash
 AFC_DEMO_ACCOUNT_PASSWORD='<choose-a-password>' uvicorn app.main:app --port 8000
@@ -48,7 +48,7 @@ Sign in with email `admin@demo.local` and that password. Restarting with a diffe
 ```bash
 curl -s -X POST http://localhost:8000/api/v1/admin/tenants \
   -H "x-bootstrap-key: <your-bootstrap-key>" -H "content-type: application/json" \
-  -d '{"name":"Acme","admin_email":"admin@acme.example","admin_password":"<12+ characters>"}'
+  -d '{"name":"Acme","admin_email":"admin@acme.example","admin_password":"<5+ characters>"}'
 ```
 
 The tenant admin signs in on `/login`. Admins can add analysts on `/admin`.

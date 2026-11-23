@@ -169,8 +169,8 @@ function PlatformSection() {
             <input type="email" required value={form.adminEmail} onChange={(e) => setForm({ ...form, adminEmail: e.target.value })} className={inputClass} />
           </label>
           <label className="text-sm">
-            Admin password (12+)
-            <input type="password" required minLength={12} value={form.adminPassword} onChange={(e) => setForm({ ...form, adminPassword: e.target.value })} className={inputClass} />
+            Admin password (5+)
+            <input type="password" required minLength={5} value={form.adminPassword} onChange={(e) => setForm({ ...form, adminPassword: e.target.value })} className={inputClass} />
           </label>
           <div className="flex items-end">
             <button type="submit" className="w-full rounded-md bg-emerald-500 px-4 py-2 font-semibold text-slate-900 hover:bg-emerald-400">
@@ -255,8 +255,8 @@ function TenantUsersSection() {
               <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inputClass} />
             </label>
             <label className="text-sm">
-              Password (12+)
-              <input type="password" required minLength={12} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={inputClass} />
+              Password (5+)
+              <input type="password" required minLength={5} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={inputClass} />
             </label>
             <label className="text-sm">
               Role

@@ -166,7 +166,7 @@ def test_admin_email_must_be_unique_across_the_platform(client):
 def test_passwords_shorter_than_twelve_characters_are_refused(client):
     response = client.post(
         "/api/v1/admin/tenants",
-        json={"name": "Initech", "admin_email": "ops@initech.test", "admin_password": "short"},
+        json={"name": "Initech", "admin_email": "ops@initech.test", "admin_password": "abcd"},
         headers=BOOT,
     )
     assert response.status_code == 422

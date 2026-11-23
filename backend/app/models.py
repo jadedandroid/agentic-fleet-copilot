@@ -178,14 +178,14 @@ class TenantCreateIn(BaseModel):
     # Optional stable ID. When omitted it is derived from the name.
     tenant_id: StrictStr | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]{0,58}[a-z0-9]$")
     admin_email: StrictStr = Field(min_length=3, max_length=254)
-    admin_password: StrictStr = Field(min_length=12, max_length=256)
+    admin_password: StrictStr = Field(min_length=5, max_length=256)
 
 
 class UserCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: StrictStr = Field(min_length=3, max_length=254)
-    password: StrictStr = Field(min_length=12, max_length=256)
+    password: StrictStr = Field(min_length=5, max_length=256)
     role: Literal["admin", "analyst"]
 
 

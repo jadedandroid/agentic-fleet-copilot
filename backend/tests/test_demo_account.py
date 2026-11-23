@@ -49,7 +49,7 @@ def test_a_demo_password_under_six_characters_is_refused_at_startup(tmp_path, mo
     try:
         _client(tmp_path)
     except ValueError as error:
-        assert "at least 6" in str(error)
+        assert "at least 5" in str(error)
     else:
         raise AssertionError("a short demo password must not start the server")
 
