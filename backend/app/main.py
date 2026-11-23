@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import os
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
@@ -45,7 +46,7 @@ from .models import (
     TenantCreateIn,
     UserCreateIn,
 )
-from .seed import seed_if_empty
+from .seed import ensure_demo_account, seed_if_empty
 from .store import TelemetryStore
 from .uploads import MAX_UPLOAD_BYTES, UnsupportedUploadFormat, UploadRejected, parse_upload
 
@@ -75,6 +76,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for tenant in sorted(set(active.api_keys.values())):
         store.ensure_tenant(tenant, tenant, datetime.now(tz=UTC))
     # Per email, so one account cannot be guessed. Per client address, so one source cannot spray many accounts.
+    demo_password = os.getenv("AFC_DEMO_ACCOUNT_PASSWORD")
+    if demo_password:
+        ensure_demo_account(store, demo_password, datetime.now(tz=UTC))
     vault = vault_from_env()
     login_throttle = LoginThrottle(max_failures=5, window=timedelta(minutes=15))
     ip_throttle = LoginThrottle(max_failures=20, window=timedelta(minutes=15))

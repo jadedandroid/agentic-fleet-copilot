@@ -33,7 +33,17 @@ Open http://localhost:3000, then sign in (see below).
 
 ## How to use
 
-**1. Sign in.** Accounts are created by the platform admin with the bootstrap key:
+**1. Sign in.**
+
+*Quick demo login (local only):* start the backend with a demo password (12+ characters). It creates a `demo` tenant with an admin account and six sample devices:
+
+```bash
+AFC_DEMO_ACCOUNT_PASSWORD='<choose-a-password>' uvicorn app.main:app --port 8000
+```
+
+Sign in with email `admin@demo.local` and that password. Do not set this variable on a public server.
+
+*Real accounts:* the platform admin creates tenants with the bootstrap key:
 
 ```bash
 curl -s -X POST http://localhost:8000/api/v1/admin/tenants \
@@ -93,6 +103,7 @@ Set these on the backend.
 | `AFC_RAGAS_ENABLED` | `1` enables the server-side judge and LLM planner. Needs `OPENAI_API_KEY`. |
 | `OPENAI_API_KEY` | Server-side OpenAI key for the judge and planner. |
 | `AFC_API_KEYS` | Optional service keys as `key=tenant` pairs, for scripts. |
+| `AFC_DEMO_ACCOUNT_PASSWORD` | Creates the local `demo` tenant and admin login (`admin@demo.local`). Local use only. |
 
 On the frontend, `NEXT_PUBLIC_API_BASE_URL` sets the backend address (default `http://localhost:8000`).
 
