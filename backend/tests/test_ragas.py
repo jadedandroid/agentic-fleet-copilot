@@ -83,7 +83,9 @@ def test_a_judge_that_returns_nan_is_reported_as_a_failure(monkeypatch):
     """
     import types
 
-    import ragas
+    # RAGAS is optional and not in the CI image. This test runs wherever requirements-evals.txt is installed.
+    ragas = pytest.importorskip("ragas")
+    pytest.importorskip("openai")
 
     from app import grounding_judge
 
