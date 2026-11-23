@@ -17,7 +17,7 @@ from typing import Any
 
 ENABLE_FLAG = "AFC_RAGAS_ENABLED"
 REPORT_DIR = Path(__file__).resolve().parent / "reports"
-SAMPLE_COLUMNS = {"user_input", "response", "retrieved_contexts"}
+SAMPLE_COLUMNS = {"user_input", "response", "retrieved_contexts", "reference"}
 
 
 def judge_status() -> tuple[bool, str]:
@@ -45,7 +45,16 @@ def build_samples(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
     samples = []
     for case in cases:
         contexts = [citation_text(c) for c in case.get("citations", [])]
-        samples.append({"user_input": case["question"], "response": case["answer"], "retrieved_contexts": contexts})
+        # context_precision needs a reference. The deterministic answer is the reference, so the judge asks whether each
+        # cited context supports that answer. This checks the citations, not an independent ground truth.
+        samples.append(
+            {
+                "user_input": case["question"],
+                "response": case["answer"],
+                "retrieved_contexts": contexts,
+                "reference": case["answer"],
+            }
+        )
     return samples
 
 

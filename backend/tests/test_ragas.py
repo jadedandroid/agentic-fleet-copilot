@@ -46,7 +46,7 @@ def test_samples_carry_only_question_answer_and_citation_text():
             }
         ]
     )
-    assert set(samples[0]) == {"user_input", "response", "retrieved_contexts"}
+    assert set(samples[0]) == {"user_input", "response", "retrieved_contexts", "reference"}
     assert samples[0]["retrieved_contexts"] == ["acme-lap-001 disk_free_pct = 9.5 (r, observed t)"]
 
 
