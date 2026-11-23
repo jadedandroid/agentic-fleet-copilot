@@ -2,8 +2,55 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import { API_BASE, readError } from "@/lib/api";
+
+type TenantRow = { tenant_id: string; name: string; status: string };
+
+// The platform operator picks the tenant it acts on. Every request then carries that tenant as X-Tenant-Id.
+function TenantPicker() {
+  const { session, selectTenant } = useAuth();
+  const token = session?.token;
+  const [tenants, setTenants] = useState<TenantRow[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    fetch(`${API_BASE}/api/v1/admin/tenants`, { headers: { "x-bootstrap-key": token } })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await readError(response));
+        }
+        return (await response.json()) as { tenants: TenantRow[] };
+      })
+      .then((body) => setTenants(body.tenants.filter((tenant) => tenant.status !== "deleted")))
+      .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "Could not load tenants"));
+  }, [token]);
+
+  return (
+    <label className="flex items-center gap-2 text-slate-300">
+      Tenant
+      <select
+        aria-label="Tenant"
+        value={session?.scopeTenantId ?? ""}
+        onChange={(event) => selectTenant(event.target.value || null)}
+        className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-cyan-300"
+      >
+        <option value="">Choose a tenant</option>
+        {tenants.map((tenant) => (
+          <option key={tenant.tenant_id} value={tenant.tenant_id}>
+            {tenant.name} ({tenant.tenant_id})
+          </option>
+        ))}
+      </select>
+      {error && <span className="text-rose-300">{error}</span>}
+    </label>
+  );
+}
 
 const LINKS = [
   { href: "/", label: "Home" },
@@ -46,10 +93,17 @@ export function NavBar() {
         <div className="ml-auto flex items-center gap-3 text-sm">
           {session ? (
             <>
-              <span className="text-slate-300">
-                {session.email} · <span className="text-cyan-300">{session.tenantId}</span> ·{" "}
-                <span className="text-slate-400">{session.role}</span>
-              </span>
+              {session.role === "platform_admin" ? (
+                <>
+                  <span className="text-slate-300">Platform operator</span>
+                  <TenantPicker />
+                </>
+              ) : (
+                <span className="text-slate-300">
+                  {session.email} · <span className="text-cyan-300">{session.tenantId}</span> ·{" "}
+                  <span className="text-slate-400">{session.role}</span>
+                </span>
+              )}
               <button
                 onClick={signOut}
                 className="rounded-md border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-800"

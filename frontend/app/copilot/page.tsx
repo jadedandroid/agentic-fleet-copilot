@@ -28,6 +28,8 @@ function CopilotWorkspace() {
   const apiBase = API_BASE;
   const { session, authorizedFetch } = useAuth();
   const token = session?.token ?? "";
+  // The platform operator must pick a tenant before it can ask anything.
+  const needsTenant = session?.role === "platform_admin" && !session.scopeTenantId;
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
   const [allowRemediation, setAllowRemediation] = useState(true);
   // Only works when the server has the judge enabled with a key. Unrecognized questions are then planned by the LLM.
@@ -85,8 +87,11 @@ function CopilotWorkspace() {
       question,
       allowRemediation: String(allowRemediation),
       llmPlanner: String(llmPlanner),
-      contextWindowMinutes: asOf ? "43200" : "20160"
+      contextWindowMinutes: "525600"
     });
+    if (session?.scopeTenantId) {
+      params.set("tenantId", session.scopeTenantId);
+    }
     if (asOf) {
       params.set("asOf", new Date(asOf).toISOString());
     }
@@ -189,7 +194,9 @@ function CopilotWorkspace() {
         <div className="text-sm">
           Signed in tenant
           <p className="mt-2 text-slate-300">
-            <span className="text-cyan-300">{session?.tenantId}</span> · {session?.role}
+            <span className="text-cyan-300">{session?.tenantId ?? session?.scopeTenantId ?? "no tenant selected"}</span>
+            {" · "}
+            {session?.role}
           </p>
         </div>
         <label className="text-sm md:col-span-2">
@@ -213,9 +220,12 @@ function CopilotWorkspace() {
             <input type="checkbox" checked={llmPlanner} onChange={(event) => setLlmPlanner(event.target.checked)} />
             LLM planner for unrecognized questions
           </label>
+          {needsTenant && (
+            <p className="text-sm text-amber-300">Choose a tenant in the top bar to ask questions about its data.</p>
+          )}
           <button
             onClick={runCopilot}
-            disabled={busy}
+            disabled={busy || needsTenant}
             className="rounded-md bg-cyan-500 px-4 py-2 font-semibold text-slate-900 transition hover:bg-cyan-400 disabled:opacity-50"
           >
             {phase === "running" ? "Running..." : "Run copilot"}
@@ -234,7 +244,7 @@ function CopilotWorkspace() {
           />
         </label>
         <p className="text-xs text-slate-400">
-          Use a past time to query historical data. The 30-day window ends at this time, and rows after it are ignored.
+          Use a past time to query historical data. The one-year window ends at this time, and rows after it are ignored.
           The take-home dataset ends June 12, 2026 at 11:00 UTC, so any time after that on June 12 covers all of it.
         </p>
       </section>

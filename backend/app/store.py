@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -190,6 +190,15 @@ class TelemetryStore:
                     password_hash VARCHAR NOT NULL,
                     role VARCHAR NOT NULL,
                     created_at VARCHAR NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tenant_companies (
+                    tenant_id VARCHAR NOT NULL,
+                    company_id VARCHAR NOT NULL,
+                    PRIMARY KEY (tenant_id, company_id)
                 )
                 """
             )
@@ -383,6 +392,25 @@ class TelemetryStore:
             {"tenant_id": r[0], "name": r[1], "status": r[2], "created_at": r[3], "deleted_at": r[4]} for r in rows
         ]
 
+    def term_identities(self) -> list[tuple[str, str, str]]:
+        """(owner tenant, term, display name) for tenants and for every company uploaded into a tenant."""
+        with self._lock:
+            tenants = [(r[0], r[0], r[1]) for r in self._conn.execute("SELECT tenant_id, name FROM tenants").fetchall()]
+            companies = [
+                (r[0], r[1], r[1].split("-")[0].title())
+                for r in self._conn.execute("SELECT tenant_id, company_id FROM tenant_companies").fetchall()
+            ]
+        return tenants + companies
+
+    def add_tenant_companies(self, tenant_id: str, company_ids: Iterable[str]) -> None:
+        """Record which companies a tenant holds, so questions about them are the tenant's own."""
+        with self._lock:
+            for company in sorted(set(company_ids)):
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO tenant_companies (tenant_id, company_id) VALUES (?, ?)", [tenant_id, company]
+                )
+            self._commit()
+
     def tenant_identities(self) -> list[tuple[str, str]]:
         """(tenant_id, display name) for every tenant, including deleted ones, so mentions are still refused."""
         with self._lock:
@@ -509,6 +537,7 @@ class TelemetryStore:
         """
         tables = (
             "sessions",
+            "tenant_companies",
             "users",
             "compliance_results",
             "device_metrics",

@@ -1,6 +1,6 @@
 """Deterministic demo fleets: 15 snapshots per tenant, one every 12 hours, spanning 7 days.
 
-The newest snapshot is 5 minutes before `now`, so default 14-day windows always include them.
+The newest snapshot is 5 minutes before `now`, so the default one-year window always includes them.
 Values are pure functions of the snapshot index, so every run produces identical telemetry.
 """
 

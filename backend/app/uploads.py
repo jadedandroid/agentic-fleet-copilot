@@ -64,6 +64,14 @@ def parse_upload(raw: bytes, content_type: str, filename: str, source_name: str)
     raise UnsupportedUploadFormat("Upload must be JSON (application/json, .json) or CSV (text/csv, .csv)")
 
 
+COMPANY_SOURCE_PREFIX = "dataset:device-telemetry:"
+
+
+def companies_in(snapshots: list[FleetSnapshotIn]) -> set[str]:
+    """Companies named in agent-record snapshots, read from the company tag on each snapshot's source."""
+    return {s.source[len(COMPANY_SOURCE_PREFIX):] for s in snapshots if s.source.startswith(COMPANY_SOURCE_PREFIX)}
+
+
 def _parse_json(raw: bytes, ndjson: bool) -> list[FleetSnapshotIn]:
     """Accept three JSON shapes, all validated before anything is stored:
 

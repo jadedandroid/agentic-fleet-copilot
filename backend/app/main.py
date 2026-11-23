@@ -48,14 +48,17 @@ from .models import (
 )
 from .seed import ensure_demo_account, seed_if_empty
 from .store import TelemetryStore
-from .uploads import MAX_UPLOAD_BYTES, UnsupportedUploadFormat, UploadRejected, parse_upload
+from .uploads import MAX_UPLOAD_BYTES, UnsupportedUploadFormat, UploadRejected, companies_in, parse_upload
 
 
 @dataclass(frozen=True)
 class Principal:
-    """The authenticated caller. Tenant and role come from the server-side session or key, never from the client."""
+    """The authenticated caller. Tenant and role come from the server-side session or key, never from the client.
 
-    tenant_id: str
+    A platform operator (bootstrap key) has no tenant of its own. It names one per request with X-Tenant-Id.
+    """
+
+    tenant_id: str | None
     role: str
     user_id: str | None
     email: str | None
@@ -85,7 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     copilot = FleetCopilotService(
         store,
         audit,
-        known_tenants=store.tenant_identities,
+        known_tenants=store.term_identities,
         checkpoint_path=active.data_dir / "checkpoints.sqlite3",
     )
     toolbox = ActionToolbox()
@@ -111,6 +114,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 email=session["email"],
             )
 
+        if active.bootstrap_admin_key and hmac.compare_digest(
+            active.bootstrap_admin_key.encode(), presented.encode()
+        ):
+            return Principal(tenant_id=None, role="platform_admin", user_id=None, email=None)
+
         # Every configured key is compared, so timing does not reveal which matched.
         matched: str | None = None
         for key, tenant in active.api_keys.items():
@@ -131,13 +139,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             token = authorization[len("bearer ") :].strip()
         return principal_for(token or x_api_key)
 
-    def require_tenant(principal: Principal = Depends(require_principal)) -> str:
+    def scoped_tenant(principal: Principal, requested: str | None, method: str, path: str) -> str:
+        """The tenant a request acts on. Tenant callers stay in their own tenant; the platform operator names one."""
+        if principal.role == "platform_admin":
+            if not requested:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Platform operator requests need an X-Tenant-Id header naming the tenant",
+                )
+            if not store.is_tenant_active(requested):
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown or inactive tenant")
+            # Every operator access is written to that tenant's audit trail, so tenants can see who looked.
+            audit.append_event("platform.scoped_access", requested, {"method": method, "path": path})
+            return requested
+        if requested and requested != principal.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cross-tenant access is refused. Tenants only reach their own data.",
+            )
+        assert principal.tenant_id is not None
         return principal.tenant_id
+
+    def require_tenant(
+        request: Request,
+        principal: Principal = Depends(require_principal),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> str:
+        return scoped_tenant(principal, x_tenant_id, request.method, request.url.path)
 
     def require_admin(principal: Principal = Depends(require_principal)) -> Principal:
         if principal.role != "admin":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This action requires the admin role")
         return principal
+
+    def require_admin_tenant(
+        request: Request,
+        principal: Principal = Depends(require_principal),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> str:
+        """Admin-only actions on a tenant's data (approvals). The operator may act in any tenant it names."""
+        if principal.role not in ("admin", "platform_admin"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This action requires the admin role")
+        return scoped_tenant(principal, x_tenant_id, request.method, request.url.path)
 
     def require_bootstrap(x_bootstrap_key: str | None = Header(default=None)) -> None:
         if not active.bootstrap_admin_key:
@@ -206,10 +249,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ),
         as_of: str | None = Query(default=None, alias="asOf"),
         llm_planner: bool = Query(default=False, alias="llmPlanner"),
+        tenant_param: str | None = Query(default=None, alias="tenantId"),
     ) -> StreamingResponse:
-        # EventSource cannot send headers, so the credential travels as a query param. Demo trade-off, documented in README.
+        # EventSource cannot send headers, so the credential and tenant travel as query params. Demo trade-off, documented in README.
         principal = principal_for(api_key)
-        tenant_id = principal.tenant_id
+        tenant_id = scoped_tenant(principal, tenant_param, "GET", "/api/v1/copilot/stream")
         request = CopilotQueryRequest(
             question=question,
             allow_remediation=allow_remediation,
@@ -229,11 +273,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def review_remediation_action(
         action_id: str,
         payload: ApprovalDecisionRequest,
-        principal: Principal = Depends(require_admin),
+        principal: Principal = Depends(require_principal),
+        tenant_id: str = Depends(require_admin_tenant),
     ) -> ApprovalDecisionResponse:
-        tenant_id = principal.tenant_id
         # A signed-in reviewer is recorded by identity, so the client cannot name someone else.
-        reviewer = principal.email or payload.reviewer
+        reviewer = principal.email or (
+            "platform-operator" if principal.role == "platform_admin" else payload.reviewer
+        )
         try:
             action = audit.get_action(action_id=action_id, tenant_id=tenant_id)
             decision_at = audit.resolve_action(
@@ -364,7 +410,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return vault.open(record["ciphertext"])
 
     @app.post("/api/v1/evals/grounding-judge")
-    def grounding_judge(payload: GroundingJudgeRequest, principal: Principal = Depends(require_principal)) -> dict[str, Any]:
+    def grounding_judge(
+        payload: GroundingJudgeRequest,
+        principal: Principal = Depends(require_principal),
+        tenant_id: str = Depends(require_tenant),
+    ) -> dict[str, Any]:
         """Run the copilot on a question, then judge its answer with an OpenAI key.
 
         A key in the request is used for this call only. Without one, the saved key is used if it has not expired.
@@ -377,7 +427,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 detail="No judge key: enter one for this run, or save one that has not expired.",
             )
         answer = copilot.run_query(
-            principal.tenant_id,
+            tenant_id,
             CopilotQueryRequest(
                 question=payload.question,
                 allow_remediation=False,
@@ -406,7 +456,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         audit.append_event(
             "grounding.judged",
-            principal.tenant_id,
+            tenant_id,
             {"question": payload.question, "scores": report["scores"], "judge_model": report["judge_model"]},
         )
         return {
@@ -484,7 +534,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "role": principal.role,
             "email": principal.email,
             "user_id": principal.user_id,
-            "auth": "session" if principal.user_id else "service_key",
+            "auth": "session" if principal.user_id else ("platform_operator" if principal.role == "platform_admin" else "service_key"),
         }
 
     # --- tenant users (tenant admin) ----------------------------------------------------------------
@@ -576,7 +626,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def upload_fleet(
         request: Request,
         filename: str = Query(default="upload", min_length=1, max_length=120),
-        principal: Principal = Depends(require_principal),
+        tenant_id: str = Depends(require_tenant),
     ) -> dict[str, Any]:
         """Ingest a JSON or CSV file. Raw body with a Content-Type header. All-or-nothing: any error stores nothing."""
         raw = await request.body()
@@ -600,11 +650,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 detail={"message": "Upload rejected; nothing was stored", "errors": error.errors},
             ) from error
 
-        snapshot_ids = store.ingest_fleet_snapshots(principal.tenant_id, snapshots)
+        snapshot_ids = store.ingest_fleet_snapshots(tenant_id, snapshots)
+        store.add_tenant_companies(tenant_id, companies_in(snapshots))
         device_count = sum(len(snapshot.devices) for snapshot in snapshots)
         audit.append_event(
             "fleet.upload.ingested",
-            principal.tenant_id,
+            tenant_id,
             {"filename": filename, "snapshot_ids": snapshot_ids, "device_count": device_count},
         )
         return {"snapshot_ids": snapshot_ids, "snapshot_count": len(snapshot_ids), "device_count": device_count}

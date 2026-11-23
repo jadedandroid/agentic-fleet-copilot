@@ -5,8 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool, StrictFloat, StrictInt, StrictStr
 
-DEFAULT_LOOKBACK_MINUTES = 20160  # 14 days; trend questions need history
-MAX_LOOKBACK_MINUTES = 43200  # 30 days
+DEFAULT_LOOKBACK_MINUTES = 525600  # 1 year; trend questions need history
+MAX_LOOKBACK_MINUTES = 525600  # 1 year
 
 Severity = Literal["low", "medium", "high"]
 ToolName = Literal[

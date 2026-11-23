@@ -200,18 +200,20 @@ OUT_OF_SCOPE_REFUSAL = (
 )
 
 
-def mentions_other_tenant(question: str, current_tenant: str, known_tenants: Iterable[tuple[str, str]]) -> bool:
-    """True when the question names another tenant, including a near-miss of its name.
+def mentions_other_tenant(question: str, current_tenant: str, known_tenants: Iterable[tuple]) -> bool:
+    """True when the question names data that belongs to another tenant, including a near-miss of its name.
 
-    The caller's own ID and name never count, even when another tenant shares the word (for example "Acme" for
+    Each entry is (owner_tenant, term_id, display_name). A two-item (tenant_id, name) pair means the tenant itself.
+    Companies uploaded into the caller's tenant are the caller's own, so questions about them are answered. The
+    caller's terms never count as cross-tenant, even when another tenant shares the word (for example "Acme" for
     tenant acme-001 and an older tenant named acme). Retrieval is tenant-scoped either way; this guards intent.
     """
     text = question.lower()
     if _GENERIC_CROSS_TENANT.search(text):
         return True
-    tenants = list(known_tenants)
-    own_terms = {term.lower() for tid, name in tenants if tid == current_tenant for term in (tid, name)}
-    other_terms = {term.lower() for tid, name in tenants if tid != current_tenant for term in (tid, name)} - own_terms
+    entries = [(item[0], item[0], item[1]) if len(item) == 2 else tuple(item) for item in known_tenants]
+    own_terms = {term.lower() for owner, *names in entries if owner == current_tenant for term in names}
+    other_terms = {term.lower() for owner, *names in entries if owner != current_tenant for term in names} - own_terms
     for term in other_terms:
         if re.search(rf"\b{re.escape(term)}\b", text):
             return True

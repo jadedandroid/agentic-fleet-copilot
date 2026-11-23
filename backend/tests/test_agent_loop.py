@@ -57,7 +57,12 @@ def _ingest_low_disk(client: TestClient, device_id: str, observed: datetime) -> 
 def _ask(client: TestClient) -> dict:
     response = client.post(
         "/api/v1/copilot/query",
-        json={"question": "Which devices at Acme are low on disk space?", "allow_remediation": True},
+        # A 14-day window makes the re-plan observable: the older reading is outside it until the window widens.
+        json={
+            "question": "Which devices at Acme are low on disk space?",
+            "allow_remediation": True,
+            "context_window_minutes": 20160,
+        },
         headers=ACME,
     )
     assert response.status_code == 200, response.text
@@ -78,7 +83,7 @@ def test_the_plan_is_recorded_before_any_data_is_read(tmp_path):
 def test_weak_evidence_widens_the_lookback_once_and_then_proposes(tmp_path):
     client = _client(tmp_path)
     now = datetime.now(tz=UTC)
-    # One reading inside the 14-day default window, one older reading only visible after widening to 30 days.
+    # With a 14-day window, one reading is inside and one older reading is visible only after the re-plan widens it.
     _ingest_low_disk(client, "loop-lap-2", now - timedelta(days=20))
     _ingest_low_disk(client, "loop-lap-2", now - timedelta(days=2))
 

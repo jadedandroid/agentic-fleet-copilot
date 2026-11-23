@@ -53,6 +53,8 @@ curl -s -X POST http://localhost:8000/api/v1/admin/tenants \
 
 The tenant admin signs in on `/login`. Admins can add analysts on `/admin`.
 
+*Platform operator:* the bootstrap key also works as an operator. On `/login`, use **Sign in as operator** with that key, then pick a tenant in the top bar. Every request is scoped to that tenant. Over the API, send the key as `Authorization: Bearer <key>` and the tenant as `X-Tenant-Id: <tenant_id>` (for `/api/v1/copilot/stream`, pass `tenantId=` in the query). Tenants cannot name another tenant and get `403`. Each operator access is written to that tenant's audit log as `platform.scoped_access`. The operator cannot manage tenant users or saved judge keys.
+
 **2. Load data.** On `/source`, upload a file. Accepted formats:
 
 | Format | What it holds |
