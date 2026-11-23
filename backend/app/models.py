@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool, StrictFloat, StrictInt, StrictStr
 
 DEFAULT_LOOKBACK_MINUTES = 20160  # 14 days; trend questions need history
 MAX_LOOKBACK_MINUTES = 43200  # 30 days
@@ -185,3 +185,24 @@ class UserCreateIn(BaseModel):
     email: StrictStr = Field(min_length=3, max_length=254)
     password: StrictStr = Field(min_length=12, max_length=256)
     role: Literal["admin", "analyst"]
+
+
+class GroundingJudgeRequest(BaseModel):
+    """Ask the copilot a question, then score its answer with an OpenAI key.
+
+    Pass `openai_api_key` to use it for this request only. Omit it to use the key you saved, if one is still valid.
+    The key is a SecretStr, so it is never shown in reprs or logs.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    question: StrictStr = Field(min_length=1, max_length=500)
+    openai_api_key: SecretStr | None = Field(default=None, min_length=20, max_length=300)
+
+
+class JudgeKeySaveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    openai_api_key: SecretStr = Field(min_length=20, max_length=300)
+    # Saved keys expire, so a forgotten key stops working on its own.
+    ttl_days: StrictInt = Field(default=30, ge=1, le=90)

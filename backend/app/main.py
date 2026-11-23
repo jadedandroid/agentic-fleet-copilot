@@ -17,6 +17,8 @@ from .actions import ActionToolbox
 from .audit import ActionNotFoundError, ActionStateError, AuditLogger
 from .config import Settings, load_settings
 from .copilot import FleetCopilotService
+from .grounding_judge import JudgeUnavailable, build_samples, run_judge
+from .judge_keys import vault_from_env
 from .identity import (
     DUMMY_PASSWORD_HASH,
     LoginThrottle,
@@ -36,6 +38,8 @@ from .models import (
     CopilotQueryRequest,
     CopilotQueryResponse,
     FleetSnapshotIn,
+    GroundingJudgeRequest,
+    JudgeKeySaveRequest,
     LoginRequest,
     TelemetrySnapshotIn,
     TenantCreateIn,
@@ -71,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for tenant in sorted(set(active.api_keys.values())):
         store.ensure_tenant(tenant, tenant, datetime.now(tz=UTC))
     # Per email, so one account cannot be guessed. Per client address, so one source cannot spray many accounts.
+    vault = vault_from_env()
     login_throttle = LoginThrottle(max_failures=5, window=timedelta(minutes=15))
     ip_throttle = LoginThrottle(max_failures=20, window=timedelta(minutes=15))
     copilot = FleetCopilotService(
@@ -288,6 +293,116 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         audit.mark_action_executed(action_id=action_id, tenant_id=tenant_id, execution_result=result)
         return ActionExecutionResponse(action_id=action_id, executed=True, tool_name=tool_name, result=result)
+
+    # --- saved judge key (encrypted at rest, expires) ----------------------------------------------
+
+    def _judge_key_view(record: dict[str, Any] | None) -> dict[str, Any]:
+        if record is None:
+            return {"configured": False}
+        return {"configured": True, "last4": record["last4"], "expires_at": record["expires_at"]}
+
+    def _require_user_for_judge_key(principal: Principal) -> str:
+        if principal.user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Saved judge keys belong to a user account. Sign in to save one.",
+            )
+        return principal.user_id
+
+    @app.get("/api/v1/judge-key")
+    def get_judge_key(principal: Principal = Depends(require_principal)) -> dict[str, Any]:
+        user_id = _require_user_for_judge_key(principal)
+        record = store.get_judge_key(user_id)
+        if record and datetime.fromisoformat(record["expires_at"]) <= datetime.now(tz=UTC):
+            store.delete_judge_key(user_id)
+            audit.append_event("judge_key.expired", principal.tenant_id, {"user_id": user_id})
+            record = None
+        return _judge_key_view(record)
+
+    @app.put("/api/v1/judge-key")
+    def save_judge_key(payload: JudgeKeySaveRequest, principal: Principal = Depends(require_principal)) -> dict[str, Any]:
+        user_id = _require_user_for_judge_key(principal)
+        if vault is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Saved keys are disabled on this server. Set AFC_JUDGE_KEY_SECRET to enable them.",
+            )
+        key = payload.openai_api_key.get_secret_value()
+        now = datetime.now(tz=UTC)
+        expires_at = now + timedelta(days=payload.ttl_days)
+        store.save_judge_key(user_id, principal.tenant_id, vault.seal(key), key[-4:], now, expires_at)
+        audit.append_event(
+            "judge_key.saved",
+            principal.tenant_id,
+            {"user_id": user_id, "last4": key[-4:], "expires_at": expires_at.isoformat()},
+        )
+        return _judge_key_view(store.get_judge_key(user_id))
+
+    @app.delete("/api/v1/judge-key")
+    def delete_judge_key(principal: Principal = Depends(require_principal)) -> dict[str, Any]:
+        user_id = _require_user_for_judge_key(principal)
+        if store.delete_judge_key(user_id):
+            audit.append_event("judge_key.deleted", principal.tenant_id, {"user_id": user_id})
+        return {"configured": False}
+
+    def _usable_saved_key(principal: Principal) -> str | None:
+        if principal.user_id is None or vault is None:
+            return None
+        record = store.get_judge_key(principal.user_id)
+        if record is None:
+            return None
+        if datetime.fromisoformat(record["expires_at"]) <= datetime.now(tz=UTC):
+            store.delete_judge_key(principal.user_id)
+            audit.append_event("judge_key.expired", principal.tenant_id, {"user_id": principal.user_id})
+            return None
+        return vault.open(record["ciphertext"])
+
+    @app.post("/api/v1/evals/grounding-judge")
+    def grounding_judge(payload: GroundingJudgeRequest, principal: Principal = Depends(require_principal)) -> dict[str, Any]:
+        """Run the copilot on a question, then judge its answer with an OpenAI key.
+
+        A key in the request is used for this call only. Without one, the saved key is used if it has not expired.
+        Keys are never returned, audited, or written to a report file.
+        """
+        key = payload.openai_api_key.get_secret_value() if payload.openai_api_key else _usable_saved_key(principal)
+        if key is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No judge key: enter one for this run, or save one that has not expired.",
+            )
+        answer = copilot.run_query(principal.tenant_id, CopilotQueryRequest(question=payload.question, allow_remediation=False))
+        if answer.refusal_reason:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A refused answer has nothing to judge.")
+        if not answer.citations:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The answer has no citations to judge.")
+
+        samples = build_samples(
+            [
+                {
+                    "question": payload.question,
+                    "answer": answer.answer,
+                    "citations": [citation.model_dump(mode="json") for citation in answer.citations],
+                }
+            ]
+        )
+        try:
+            report = run_judge(samples, api_key=key, write_report=False)
+        except JudgeUnavailable as error:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from None
+
+        audit.append_event(
+            "grounding.judged",
+            principal.tenant_id,
+            {"question": payload.question, "scores": report["scores"], "judge_model": report["judge_model"]},
+        )
+        return {
+            "question": payload.question,
+            "intent": answer.intent,
+            "answer": answer.answer,
+            "scores": report["scores"],
+            "judge_model": report["judge_model"],
+            "note": report["note"],
+        }
 
     @app.get("/api/v1/audit/events")
     def recent_events(

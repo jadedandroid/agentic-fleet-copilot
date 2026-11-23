@@ -9,6 +9,8 @@ services:
       AFC_SEED_DEMO: "true"
       # Platform admin key for creating and deleting tenants. Unset leaves those endpoints disabled.
       AFC_BOOTSTRAP_ADMIN_KEY: ${AFC_BOOTSTRAP_ADMIN_KEY:-}
+      # Encrypts user-saved OpenAI judge keys. Unset disables saving (one-time keys still work).
+      AFC_JUDGE_KEY_SECRET: ${AFC_JUDGE_KEY_SECRET:-}
     volumes:
       - backend_data:/var/lib/agentic-fleet-copilot
     ports:

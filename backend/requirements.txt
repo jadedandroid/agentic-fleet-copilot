@@ -5,5 +5,7 @@ duckdb>=1.1.3; python_version < "3.14"
 langgraph==0.2.73
 # Durable approval checkpoints. 2.0.1 matches langgraph-checkpoint 2.x, which 0.2.73 requires.
 langgraph-checkpoint-sqlite==2.0.1
+# Encrypts saved judge keys at rest (Fernet). Used only when AFC_JUDGE_KEY_SECRET is set.
+cryptography>=43,<47
 pytest>=8.4.2
 httpx>=0.28.1

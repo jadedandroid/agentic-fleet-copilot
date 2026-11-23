@@ -185,6 +185,21 @@ The default run covers 119 deterministic tests:
 - `tests/test_dataset_adapter.py`: the mapping, and each way it can reject a record.
 - `tests/test_dataset_eval.py`: an oracle evaluation on the real dataset. Expected answers are computed directly from the NDJSON file, with the thresholds written out in the test, and the copilot is never used to grade itself. Cited values must equal the raw values. The suite is skipped if the dataset file is absent.
 
+### Judge keys (bring your own key)
+
+The grounding judge is off by default. You can run it on any answer in the copilot page by entering an OpenAI key:
+
+- **One-time:** enter a key for a single run. It is used for that request and discarded.
+- **Saved:** keep the key for 7, 30, or 90 days. It is encrypted with Fernet using `AFC_JUDGE_KEY_SECRET`, tied to your account, and removed automatically at expiry. Delete it at any time from the panel or `DELETE /api/v1/judge-key`.
+
+Keys are never returned by the API, never written to the audit log, and never written to the database in plain text. Saving requires `AFC_JUDGE_KEY_SECRET` to be set, and service keys cannot save one. Generate the secret with:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Losing `AFC_JUDGE_KEY_SECRET` makes saved keys unreadable, so users must save them again.
+
 ### Optional LLM judge (RAGAS)
 
 The judge is opt-in because it sends each answer and its cited evidence to an external model. Raw telemetry rows are not sent. Scores vary between runs.

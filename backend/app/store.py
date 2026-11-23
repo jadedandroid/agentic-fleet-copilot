@@ -195,6 +195,18 @@ class TelemetryStore:
             )
             self._conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS judge_keys (
+                    user_id VARCHAR PRIMARY KEY,
+                    tenant_id VARCHAR NOT NULL,
+                    ciphertext VARCHAR NOT NULL,
+                    last4 VARCHAR NOT NULL,
+                    created_at VARCHAR NOT NULL,
+                    expires_at VARCHAR NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS sessions (
                     token_hash VARCHAR PRIMARY KEY,
                     user_id VARCHAR NOT NULL,
@@ -450,6 +462,35 @@ class TelemetryStore:
         if not row:
             return None
         return {"user_id": row[0], "tenant_id": row[1], "email": row[2], "role": row[3]}
+
+    def save_judge_key(
+        self, user_id: str, tenant_id: str, ciphertext: str, last4: str, created_at: datetime, expires_at: datetime
+    ) -> None:
+        """Replace the user's saved judge key. Only the encrypted form and its last four characters are stored."""
+        with self._lock:
+            self._conn.execute("DELETE FROM judge_keys WHERE user_id = ?", [user_id])
+            self._conn.execute(
+                "INSERT INTO judge_keys (user_id, tenant_id, ciphertext, last4, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [user_id, tenant_id, ciphertext, last4, created_at.isoformat(), expires_at.isoformat()],
+            )
+            self._commit()
+
+    def get_judge_key(self, user_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT ciphertext, last4, created_at, expires_at FROM judge_keys WHERE user_id = ?", [user_id]
+            ).fetchone()
+        if not row:
+            return None
+        return {"ciphertext": row[0], "last4": row[1], "created_at": row[2], "expires_at": row[3]}
+
+    def delete_judge_key(self, user_id: str) -> bool:
+        with self._lock:
+            existed = self._conn.execute("SELECT 1 FROM judge_keys WHERE user_id = ?", [user_id]).fetchone() is not None
+            self._conn.execute("DELETE FROM judge_keys WHERE user_id = ?", [user_id])
+            self._commit()
+        return existed
 
     def delete_session(self, token_hash: str) -> None:
         with self._lock:

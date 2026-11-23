@@ -6,6 +6,7 @@ import { CitationPanel } from "@/components/CitationPanel";
 import { RequireAuth } from "@/components/RequireAuth";
 import { useAuth } from "@/components/AuthProvider";
 import { InsightPanel } from "@/components/InsightPanel";
+import { JudgePanel } from "@/components/JudgePanel";
 import { API_BASE, readError } from "@/lib/api";
 import { TracePanel } from "@/components/TracePanel";
 import {
@@ -303,6 +304,8 @@ function CopilotWorkspace() {
         <InsightPanel insights={insights} />
         <CitationPanel citations={citations} />
       </section>
+
+      <JudgePanel question={question} canJudge={Boolean(answer) && !refusalReason && citations.length > 0} />
     </main>
   );
 }

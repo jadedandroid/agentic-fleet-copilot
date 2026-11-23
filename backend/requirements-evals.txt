@@ -1,4 +1,9 @@
-# Optional LLM judge. Only needed for `pytest -m ragas`. Not installed by default.
-# Pinned to the API that backend/evals/ragas_judge.py was written against.
+# Optional LLM judge (RAGAS). Only needed for the grounding judge and `pytest -m ragas`.
+# The pins below keep the LangGraph stack that app/copilot.py depends on. Installing ragas without them upgrades
+# langgraph past the version the copilot was built and tested against.
 ragas==0.4.4
 openai>=1.0
+langgraph==0.2.73
+langgraph-checkpoint==2.1.2
+langgraph-checkpoint-sqlite==2.0.1
+langchain-core>=0.3,<0.4
