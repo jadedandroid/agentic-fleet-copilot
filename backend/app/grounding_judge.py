@@ -85,7 +85,10 @@ def run_judge(
     try:
         llm = llm_factory(JUDGE_MODEL, client=OpenAI(api_key=key))
         dataset = EvaluationDataset(samples=[SingleTurnSample(**sample) for sample in samples])
-        frame = evaluate(dataset=dataset, metrics=[faithfulness, context_precision], llm=llm).to_pandas()
+        # raise_exceptions surfaces metric failures. By default RAGAS records them as NaN and reports nothing useful.
+        frame = evaluate(
+            dataset=dataset, metrics=[faithfulness, context_precision], llm=llm, raise_exceptions=True
+        ).to_pandas()
     except Exception as error:  # the provider error may echo request details, so only its type is reported
         raise JudgeUnavailable(f"The judge call failed ({type(error).__name__}). Check the key and try again.") from None
 
@@ -94,6 +97,11 @@ def run_judge(
         for column in frame.columns
         if column not in SAMPLE_COLUMNS and frame[column].dtype.kind == "f"
     }
+    missing = [name for name, value in scores.items() if value != value]  # NaN never equals itself
+    if not scores or missing:
+        raise JudgeUnavailable(
+            f"The judge returned no usable score for: {', '.join(missing) or 'any metric'}. No report was written."
+        )
     report = {
         "generated_at": datetime.now(tz=UTC).isoformat(),
         "judge_model": JUDGE_MODEL,

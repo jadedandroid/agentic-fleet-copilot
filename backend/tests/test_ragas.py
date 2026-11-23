@@ -74,3 +74,22 @@ def test_ragas_judge_scores_grounded_answers(tmp_path):
     assert report["samples"] == 1
     assert report["scores"], "the judge returned no scores"
     assert all(0.0 <= value <= 1.0 for value in report["scores"].values())
+
+
+def test_a_judge_that_returns_nan_is_reported_as_a_failure(monkeypatch):
+    """RAGAS returns NaN on metric errors. A report of NaN must never be written as if it were a result."""
+    import pandas as pd
+    import ragas
+
+    from app import grounding_judge
+
+    frame = pd.DataFrame({"faithfulness": [float("nan")], "context_precision": [float("nan")]})
+
+    class _Result:
+        def to_pandas(self):
+            return frame
+
+    monkeypatch.setattr(ragas, "evaluate", lambda **kwargs: _Result())
+    monkeypatch.setattr(grounding_judge, "REPORT_DIR", pytest.importorskip("pathlib").Path("/nonexistent-report-dir"))
+    with pytest.raises(grounding_judge.JudgeUnavailable, match="no usable score"):
+        grounding_judge.run_judge(build_samples([{"question": "q", "answer": "a", "citations": []}]), api_key="sk-test-nan-check-000000")
